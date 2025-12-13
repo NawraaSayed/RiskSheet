@@ -462,12 +462,14 @@ def recalculate(payload: RecalculateRequest):
     return RecalculateResponse(rows=processed, market_sector_weights=market_sector_weights)
 
 
-@app.get("/")
-def root():
-    return {"message": "RiskSheet Backend is running"}
-
-
+# Serve static files (frontend)
 base_dir = Path(__file__).resolve().parent
 static_dir = (base_dir.parent / "frontend").resolve()
+
 if static_dir.exists():
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+else:
+    # Fallback if frontend is missing (e.g. during some build steps)
+    @app.get("/")
+    def root():
+        return {"message": "RiskSheet Backend is running (Frontend not found)"}
