@@ -1,7 +1,13 @@
 import math
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict
+
+# Configure yfinance cache for Vercel
+if os.environ.get("VERCEL"):
+    os.environ["YFINANCE_CACHE_DIR"] = "/tmp/py-yfinance"
+
 from backend.db.database import (
     init_db,
     get_all_positions,

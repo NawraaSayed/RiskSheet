@@ -1,8 +1,14 @@
 import sqlite3
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "risksheet.db"
+
+# On Vercel (or read-only environments), use /tmp for SQLite
+if os.environ.get("VERCEL"):
+    DB_PATH = Path("/tmp") / "risksheet.db"
+else:
+    DB_PATH = BASE_DIR / "risksheet.db"
 
 
 def get_connection():
