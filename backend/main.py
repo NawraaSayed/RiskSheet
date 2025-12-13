@@ -6,7 +6,13 @@ from typing import List, Optional, Dict
 
 # Configure yfinance cache for Vercel
 if os.environ.get("VERCEL"):
-    os.environ["YFINANCE_CACHE_DIR"] = "/tmp/py-yfinance"
+    cache_dir = Path("/tmp/py-yfinance")
+    try:
+        if not cache_dir.exists():
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["YFINANCE_CACHE_DIR"] = str(cache_dir)
+    except Exception as e:
+        print(f"Failed to create yfinance cache dir: {e}")
 
 from backend.db.database import (
     init_db,
@@ -101,7 +107,13 @@ app = FastAPI(title="RiskSheet Backend", version="1.0.0")
 
 @app.on_event("startup")
 def startup():
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        print(f"Startup failed: {e}")
+        # On Vercel, we might want to continue even if DB init fails, 
+        # though functionality will be broken.
+        pass
 
 
 @app.get("/positions", response_model=List[PositionDB])
@@ -448,6 +460,11 @@ def recalculate(payload: RecalculateRequest):
             row.weighted_expected_return = round(row.expected_return * row.weight, 6)
 
     return RecalculateResponse(rows=processed, market_sector_weights=market_sector_weights)
+
+
+@app.get("/")
+def root():
+    return {"message": "RiskSheet Backend is running"}
 
 
 base_dir = Path(__file__).resolve().parent

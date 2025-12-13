@@ -14,8 +14,11 @@ else:
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    # Keep the DB responsive to concurrent reads while writes occur
-    conn.execute("PRAGMA journal_mode = WAL;")
+    
+    # WAL mode can be problematic in serverless/tmp environments
+    if not os.environ.get("VERCEL"):
+        conn.execute("PRAGMA journal_mode = WAL;")
+        
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
