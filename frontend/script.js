@@ -138,7 +138,6 @@ const hot = new Handsontable(sheetEl, {
   afterChange: (changes, source) => {
     if (!changes || source === "loadData") return;
     debounceRecalc();
-    saveToIndexedDB();
   },
   beforeChange: (changes, source) => {
     if (!changes) return;
@@ -213,7 +212,6 @@ const hot3 = new Handsontable(sheet3El, {
 });
 
 const sheet4El = document.getElementById("sheet4");
-const sheet5El = document.getElementById("sheet5");
 let cachedAllocations = {};
 let cachedMarketWeights = {};
 
@@ -273,54 +271,6 @@ const hot4 = new Handsontable(sheet4El, {
     });
 
     updateSectorGoals();
-    updateRebalancingTable();
-    saveSectorAllocations();
-  }
-});
-
-const hot5 = new Handsontable(sheet5El, {
-  data: [],
-  colHeaders: [
-    "Sector", "Sector Value", "% Sector Weight", "Allocation (%)", 
-    "Goal Value", "Value Difference"
-  ],
-  columns: [
-    { data: "sector", readOnly: true },
-    { data: "sector_value", type: "numeric", numericFormat: { pattern: "$0,0.00" }, readOnly: true },
-    { data: "weight", type: "numeric", numericFormat: { pattern: "0.00%" }, readOnly: true },
-    { data: "set_allocation", type: "numeric", numericFormat: { pattern: "0.00%" } },
-    { data: "goal_value", type: "numeric", numericFormat: { pattern: "$0,0.00" }, readOnly: true },
-    { data: "value_difference", type: "numeric", numericFormat: { pattern: "$0,0.00" }, readOnly: true }
-  ],
-  rowHeaders: false,
-  height: "auto",
-  width: "100%",
-  stretchH: "all", // Added to fit width
-  licenseKey: "non-commercial-and-evaluation",
-  manualColumnResize: true,
-  cells(row, col) {
-    const prop = this.instance.colToProp(col);
-    if (prop === "set_allocation") {
-      return { readOnly: false, className: "editable htCenter htMiddle" };
-    }
-    return { readOnly: true, className: "locked htCenter htMiddle" };
-  },
-  afterChange: (changes, source) => {
-    if (!changes || source === "loadData" || source === "updateRebalancingTable") return;
-    
-    // Update cachedAllocations
-    changes.forEach(([row, prop, oldVal, newVal]) => {
-        if (prop === 'set_allocation') {
-            const rowData = hot5.getSourceDataAtRow(row);
-            if (rowData && rowData.sector) {
-                cachedAllocations[rowData.sector] = Number(newVal) || 0;
-            }
-        }
-    });
-
-    updateRebalancingTable();
-    updateSectorGoals(); // Update Table 4 as well
-    updateSectorTable(); // Refresh Table 4 data to reflect allocation changes
     saveSectorAllocations();
   }
 });
@@ -405,67 +355,6 @@ function updateSectorTable() {
   });
   
   hot4.loadData(data);
-}
-
-function updateRebalancingTable() {
-  const rows = hot.getSourceData();
-  const totalPortfolioValue = rows.reduce((sum, r) => sum + (Number(r.position_value) || 0), 0);
-  
-  const sectorMap = {};
-  
-  // Initialize all sectors with 0
-  ALL_SECTORS.forEach(s => {
-    sectorMap[s] = 0;
-  });
-
-  // Sum values from portfolio
-  rows.forEach(r => {
-    if (r.sector && !r.error) {
-      const s = r.sector.trim();
-      // Try to match with standard sectors if possible, or just add if it matches exactly
-      // We might need mapping if yfinance returns slightly different names
-      // For now assume exact match or close enough
-      if (sectorMap.hasOwnProperty(s)) {
-         sectorMap[s] += (Number(r.position_value) || 0);
-      } else {
-         // If sector is not in ALL_SECTORS, maybe we should add it dynamically or ignore?
-         // The requirement implies a fixed table. Let's try to map or just ignore for now.
-         // Or check if it's a known alias.
-         // "Financial" vs "Financial Services"
-         if (s === "Financial" && sectorMap.hasOwnProperty("Financial Services")) {
-             sectorMap["Financial Services"] += (Number(r.position_value) || 0);
-         } else {
-             // If it's a valid sector not in our list, add it?
-             // For the "Rebalancing" table, usually we want a fixed set.
-             // But if we have a sector not in the list, we should probably show it.
-             if (!sectorMap[s]) sectorMap[s] = 0;
-             sectorMap[s] += (Number(r.position_value) || 0);
-         }
-      }
-    }
-  });
-
-  // Use ALL_SECTORS plus any extra found
-  const allKeys = Object.keys(sectorMap).sort();
-
-  const data = allKeys.map(s => {
-    const val = sectorMap[s];
-    const weight = totalPortfolioValue ? (val / totalPortfolioValue) : 0;
-    const setAlloc = cachedAllocations[s] || 0;
-    const goalVal = totalPortfolioValue * setAlloc;
-    const diff = goalVal - val;
-    
-    return {
-      sector: s,
-      sector_value: val,
-      weight: weight,
-      set_allocation: setAlloc,
-      goal_value: goalVal,
-      value_difference: diff
-    };
-  });
-  
-  hot5.loadData(data);
 }
 
 function updateTable2() {
@@ -610,7 +499,6 @@ async function recalc() {
     updateTable2();
     updatePortfolioSummary();
     updateSectorTable();
-    updateRebalancingTable();
     
     // Re-validate and apply backend errors
     hot.validateCells(() => {
@@ -654,7 +542,6 @@ async function recalc() {
     updateTable2();
     updatePortfolioSummary();
     updateSectorTable();
-    updateRebalancingTable();
   }
 }
 
@@ -676,14 +563,13 @@ document.getElementById("sheet").addEventListener("click", (e) => {
     if (!isNaN(row)) {
       hot.alter("remove_row", row);
       updateRowNumbers();
-      saveToIndexedDB();
     }
   }
 });
 
 document.getElementById("recalc").addEventListener("click", () => {
   recalc();
-  saveToIndexedDB();
+  // saveToIndexedDB(); // Removed as persistence is now handled by hooks
 });
 
 // Tab switching logic
@@ -706,7 +592,6 @@ document.querySelectorAll('.tab').forEach(tab => {
     }
     if (targetId === 'tab-sector-allocation') {
       if (hot4) hot4.render();
-      if (hot5) hot5.render();
     }
         if (targetId === 'tab-allocation') {
             renderAllocationTab('table');
@@ -974,51 +859,64 @@ document.querySelectorAll('.tab').forEach(tab => {
     });
 
 function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(STORAGE_DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORAGE_STORE)) {
-        db.createObjectStore(STORAGE_STORE);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  // Deprecated: IndexedDB replaced by Backend API
+  return Promise.resolve();
 }
 
-async function saveToIndexedDB() {
+async function loadFromBackend() {
   try {
-    const db = await openDb();
-    const tx = db.transaction(STORAGE_STORE, "readwrite");
-    tx.objectStore(STORAGE_STORE).put(getUserRows(), "rows");
-    tx.oncomplete = () => db.close();
+    const res = await fetch('/positions');
+    if (!res.ok) return [];
+    return await res.json();
   } catch (e) {
-    console.warn("Persistence failed", e);
-  }
-}
-
-async function loadFromIndexedDB() {
-  try {
-    const db = await openDb();
-    const tx = db.transaction(STORAGE_STORE, "readonly");
-    const req = tx.objectStore(STORAGE_STORE).get("rows");
-    return await new Promise((resolve) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    });
-  } catch (e) {
+    console.error("Failed to load positions:", e);
     return [];
   }
 }
 
-async function saveSectorAllocations() {
+async function savePosition(row) {
   try {
-    const db = await openDb();
-    const tx = db.transaction(STORAGE_STORE, "readwrite");
-    // Save the global cachedAllocations which contains all allocations (visible or not)
-    tx.objectStore(STORAGE_STORE).put(cachedAllocations, "sector_alloc");
-    tx.oncomplete = () => db.close();
+    const ticker = (row.ticker || "").toString().trim().toUpperCase();
+    console.log("Saving position:", ticker, row);
+    const payload = {
+      ticker,
+      shares: parseFloat(row.shares) || 0,
+      price_bought: parseFloat(row.price_bought) || 0,
+      date_bought: row.date_bought || null
+    };
+    const res = await fetch('/positions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+        const data = await res.json();
+        console.log("Saved position:", data);
+        return data;
+    } else {
+        const errorText = await res.text();
+        console.error("Save failed with status:", res.status, errorText);
+    }
+  } catch (e) { console.error("Save failed:", e); }
+  return null;
+}
+
+async function deletePosition(ticker) {
+  try {
+    await fetch(`/positions/${ticker}`, { method: 'DELETE' });
+  } catch (e) { console.error("Delete failed:", e); }
+}
+
+async function saveSectorAllocations() {
+  // Save each sector allocation
+  try {
+    for (const [sector, allocation] of Object.entries(cachedAllocations)) {
+      await fetch('/sector-allocations', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sector, allocation })
+      });
+    }
   } catch (e) {
     console.warn("Sector persistence failed", e);
   }
@@ -1026,13 +924,9 @@ async function saveSectorAllocations() {
 
 async function loadSectorAllocations() {
   try {
-    const db = await openDb();
-    const tx = db.transaction(STORAGE_STORE, "readonly");
-    const req = tx.objectStore(STORAGE_STORE).get("sector_alloc");
-    return await new Promise((resolve) => {
-      req.onsuccess = () => resolve(req.result || {});
-      req.onerror = () => resolve({});
-    });
+    const res = await fetch('/sector-allocations');
+    if (!res.ok) return {};
+    return await res.json();
   } catch (e) {
     return {};
   }
@@ -1040,10 +934,11 @@ async function loadSectorAllocations() {
 
 async function saveCashValue() {
   try {
-    const db = await openDb();
-    const tx = db.transaction(STORAGE_STORE, "readwrite");
-    tx.objectStore(STORAGE_STORE).put(cachedCash, "portfolio_cash");
-    tx.oncomplete = () => db.close();
+    await fetch('/cash', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: cachedCash })
+    });
   } catch (e) {
     console.warn("Cash persistence failed", e);
   }
@@ -1051,23 +946,79 @@ async function saveCashValue() {
 
 async function loadCashValue() {
   try {
-    const db = await openDb();
-    const tx = db.transaction(STORAGE_STORE, "readonly");
-    const req = tx.objectStore(STORAGE_STORE).get("portfolio_cash");
-    return await new Promise((resolve) => {
-      req.onsuccess = () => resolve(Number(req.result) || 0);
-      req.onerror = () => resolve(0);
-    });
+    const res = await fetch('/cash');
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return data.amount;
   } catch (e) {
     return 0;
   }
 }
 
+// --- Handsontable Hooks for Persistence ---
+
+hot.addHook('afterChange', async (changes, source) => {
+  if (source === 'loadData' || !changes) return;
+  
+  // Handle Ticker Changes: Delete old ticker if it existed
+  for (const [row, prop, oldVal, newVal] of changes) {
+    if (prop === 'ticker' && oldVal && oldVal.toString().trim().length > 0) {
+       const oldTicker = oldVal.toString().trim();
+       // Only delete if it's actually different
+       if (oldTicker !== (newVal || "").toString().trim()) {
+           console.log(`Ticker changed from ${oldTicker} to ${newVal}. Deleting old record.`);
+           await deletePosition(oldTicker);
+       }
+    }
+  }
+  
+  // Identify unique rows that were modified
+  const modifiedRows = new Set();
+  changes.forEach(([row, prop]) => {
+    if (['ticker', 'shares', 'price_bought', 'date_bought'].includes(prop)) {
+      modifiedRows.add(row);
+    }
+  });
+
+  for (const row of modifiedRows) {
+    const physicalRow = hot.toPhysicalRow(row);
+    const rowData = hot.getSourceDataAtRow(physicalRow);
+    
+    if (!rowData) continue;
+
+    // Helper to check for valid number (not empty, not NaN)
+    const isNum = (v) => v !== null && v !== undefined && v !== '' && !isNaN(Number(v));
+    
+    const hasTicker = rowData.ticker && rowData.ticker.toString().trim().length > 0;
+    const hasShares = isNum(rowData.shares);
+    const hasPrice = isNum(rowData.price_bought);
+
+    // If all 3 columns are filled, set flag and save (upsert)
+    if (hasTicker && hasShares && hasPrice) {
+      rowData._is_ready = true;
+      await savePosition(rowData);
+    }
+  }
+});
+
+hot.addHook('beforeRemoveRow', async (index, amount) => {
+  for (let i = 0; i < amount; i++) {
+    const visualRow = index + i;
+    const physicalRow = hot.toPhysicalRow(visualRow);
+    const row = hot.getSourceDataAtRow(physicalRow);
+    if (row && row.ticker) {
+      await deletePosition(row.ticker);
+    }
+  }
+});
+
+
 (async function init() {
-  const saved = await loadFromIndexedDB();
+  const saved = await loadFromBackend();
   cachedAllocations = await loadSectorAllocations();
   cachedCash = await loadCashValue();
   
+  // Map saved data to include __row for display
   hot.loadData(saved.map((r, idx) => ({ __row: idx + 1, ...r })));
   updateRowNumbers();
   updatePortfolioSummary();
@@ -1078,3 +1029,8 @@ async function loadCashValue() {
     updateRowNumbers();
   }
 })();
+
+function saveToIndexedDB() {
+  // Placeholder to prevent errors if old code calls this
+  console.warn("saveToIndexedDB called but deprecated");
+}

@@ -2,6 +2,17 @@ import math
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict
+from backend.db.database import (
+    init_db,
+    get_all_positions,
+    insert_position,
+    delete_position,
+    get_cash,
+    update_cash,
+    get_sector_allocations,
+    upsert_sector_allocation
+)
+
 
 import numpy as np
 import pandas as pd
@@ -66,7 +77,83 @@ class RecalculateResponse(BaseModel):
     market_sector_weights: Optional[Dict[str, float]] = None
 
 
+# PositionDB no longer needs ID as ticker is PK
+class PositionDB(PositionIn):
+    pass
+
+
+class CashUpdate(BaseModel):
+    amount: float
+
+
+class SectorAllocationUpdate(BaseModel):
+    sector: str
+    allocation: float
+
+
 app = FastAPI(title="RiskSheet Backend", version="1.0.0")
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+
+@app.get("/positions", response_model=List[PositionDB])
+def read_positions():
+    return get_all_positions()
+
+
+@app.post("/positions", response_model=PositionDB)
+def create_position(pos: PositionIn):
+    try:
+        ticker = pos.ticker.strip().upper()
+        if not ticker:
+            raise HTTPException(status_code=400, detail="Ticker is required")
+        shares = float(pos.shares)
+        price_bought = float(pos.price_bought)
+        # Convert empty string date to None
+        date_bought = pos.date_bought if pos.date_bought else None
+        insert_position(ticker, shares, price_bought, date_bought)
+        # Return the object with the cleaned date
+        return PositionDB(
+            ticker=ticker,
+            shares=shares,
+            price_bought=price_bought,
+            date_bought=date_bought
+        )
+    except Exception as e:
+        print(f"Error creating position: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/positions/{ticker}")
+def delete_position_endpoint(ticker: str):
+    delete_position(ticker.strip().upper())
+    return {"ok": True}
+
+
+@app.get("/cash", response_model=CashUpdate)
+def read_cash():
+    return {"amount": get_cash()}
+
+
+@app.put("/cash", response_model=CashUpdate)
+def update_cash_endpoint(cash: CashUpdate):
+    update_cash(cash.amount)
+    return cash
+
+
+@app.get("/sector-allocations", response_model=Dict[str, float])
+def read_sector_allocations():
+    return get_sector_allocations()
+
+
+@app.put("/sector-allocations")
+def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
+    upsert_sector_allocation(alloc.sector, alloc.allocation)
+    return {"ok": True}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -361,4 +448,3 @@ base_dir = Path(__file__).resolve().parent
 static_dir = (base_dir.parent / "frontend").resolve()
 if static_dir.exists():
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
-
