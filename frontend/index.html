@@ -5,323 +5,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RiskSheet - Locked Tracker</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable@14.3.0/dist/handsontable.full.min.css" />
-  <style>
-    :root {
-      --editable: #fffde7;
-      --locked: #f3f4f6;
-      --border: #d1d5db;
-      --accent: #0b57d0;
-    }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      background: #f8fafc;
-      color: #0f172a;
-    }
-    header {
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
-      background: #ffffff;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .title {
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: 0.3px;
-    }
-    .controls {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-    button {
-      border: 1px solid var(--border);
-      background: #ffffff;
-      padding: 8px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: 600;
-      color: #0f172a;
-      transition: all 0.15s ease;
-    }
-    button:hover {
-      border-color: var(--accent);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-    }
-    button.primary {
-      background: var(--accent);
-      color: #ffffff;
-      border-color: var(--accent);
-    }
-    .sheet-wrap {
-      padding: 18px 24px;
-    }
-    #sheet {
-      width: 100%;
-      min-height: 400px;
-    }
-    .ht_master tr > td.htInvalid {
-      background: #ffe4e6 !important;
-    }
-    .locked {
-      background: var(--locked) !important;
-      color: #475569 !important;
-    }
-    .editable {
-      background: var(--editable) !important;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <div class="title">RiskSheet · Locked Google Sheets–style tracker</div>
     <div class="controls">
-      <button id="addRow">➕ Add Row</button>
-      <button id="removeRow">➖ Remove Selected Row</button>
       <button id="recalc" class="primary">🔄 Recalculate All</button>
     </div>
   </header>
+  
+  <div class="tabs">
+    <div class="tab active" data-target="tab-stock-atr">Stock ATR</div>
+    <div class="tab" data-target="tab-sector-allocation">Sector Allocation</div>
+    <div class="tab" data-target="tab-allocation">Allocation</div>
+  </div>
+
   <main class="sheet-wrap">
-    <div id="sheet"></div>
+    <div id="tab-stock-atr" class="tab-content active">
+      <div class="table-header">
+        <h3 class="section-title">Table 1</h3>
+        <button id="addRow" class="btn-sm">➕ Add Row</button>
+      </div>
+      <div id="sheet"></div>
+      <div class="flex-wrap-around summary-tables-wrapper">
+        <div>
+            <h3 class="section-title">Table 2: Market Cap Summary</h3>
+            <div id="sheet2" class="sheet-container-sm"></div>
+        </div>
+        <div>
+            <h3 class="section-title">Table 3: Portfolio Summary</h3>
+            <div id="sheet3" class="sheet-container-xs"></div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-sector-allocation" class="tab-content">
+      <div class="flex-center-col">
+        <div class="table-wrapper-lg">
+          <h3 class="section-title centered">Table 4: Sector Allocation</h3>
+          <div id="sheet4" class="sheet-full-auto"></div>
+        </div>
+        <div class="table-wrapper-lg">
+          <h3 class="section-title centered">Table 5: Rebalancing</h3>
+          <div id="sheet5" class="sheet-full-auto"></div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-allocation" class="tab-content">
+      <div class="chart-controls flex-center-gap chart-controls-wrapper">
+        <button class="chart-btn" data-type="table">Only Table</button>
+        <button class="chart-btn" data-type="bar">Bar Chart</button>
+        <button class="chart-btn" data-type="pie">Pie Chart</button>
+        <button class="chart-btn" data-type="radar">Spider Chart</button>
+      </div>
+      <div id="allocation-container" class="flex-start-center-wrap">
+        <div id="chart-wrapper" class="chart-wrapper-hidden">
+            <canvas id="allocationChart"></canvas>
+        </div>
+        <div id="allocation-table-wrapper" class="allocation-table-wrapper">
+            <div id="sheetAllocation" class="sheet-full-auto"></div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/handsontable@14.3.0/dist/handsontable.full.min.js"></script>
-  <script>
-    const EDITABLE_COLS = ["ticker", "shares", "price_bought"];
-    const STORAGE_DB = "riskSheet";
-    const STORAGE_STORE = "rows";
-
-    const columns = [
-      { data: "__row", readOnly: true },
-      { data: "ticker", type: "text" },
-      { data: "shares", type: "numeric", numericFormat: { pattern: "0,0.[000]" } },
-      { data: "price_bought", type: "numeric", numericFormat: { pattern: "0,0.[00]" } },
-      { data: "date_bought", type: "date", dateFormat: "YYYY-MM-DD", correctFormat: true, readOnly: true },
-      { data: "entry_atr", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.0000" } },
-      { data: "current_price", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.00" } },
-      { data: "position_value", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.00" } },
-      { data: "atr", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.0000" } },
-      { data: "atr_change", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.0000" } },
-      { data: "pct_change", type: "numeric", readOnly: true, numericFormat: { pattern: "0.00%" } },
-      { data: "beta", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.0000" } },
-      { data: "weight", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.0000" } },
-      { data: "var", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.00" } },
-      { data: "iv", type: "numeric", readOnly: true, numericFormat: { pattern: "0,0.0000" } },
-      { data: "sector", type: "text", readOnly: true },
-    ];
-
-    const colHeaders = [
-      "Row #",
-      "Ticker",
-      "Shares",
-      "Price Bought",
-      "Date Bought",
-      "Entry ATR",
-      "Current Price",
-      "Position Value",
-      "ATR",
-      "ATR Change",
-      "% Change",
-      "Beta",
-      "Weight",
-      "Monte Carlo VaR",
-      "Implied Volatility",
-      "Sector",
-    ];
-
-    const sheetEl = document.getElementById("sheet");
-    const hot = new Handsontable(sheetEl, {
-      data: [],
-      colHeaders,
-      columns,
-      rowHeaders: false,
-      height: "auto",
-      width: "100%",
-      licenseKey: "non-commercial-and-evaluation",
-      manualColumnMove: false,
-      manualColumnResize: false,
-      contextMenu: false,
-      fillHandle: false,
-      filters: false,
-      dropdownMenu: false,
-      allowInsertColumn: false,
-      allowRemoveColumn: false,
-      stretchH: "all",
-      cells(row, col) {
-        const prop = this.instance.colToProp(col);
-        if (prop === "__row") {
-          return { readOnly: true, className: "locked" };
-        }
-        if (EDITABLE_COLS.includes(prop)) {
-          return { readOnly: false, className: "editable" };
-        }
-        return { readOnly: true, className: "locked" };
-      },
-      afterCreateRow: updateRowNumbers,
-      afterRemoveRow: updateRowNumbers,
-      afterChange: (changes, source) => {
-        if (!changes || source === "loadData") return;
-        debounceRecalc();
-        saveToIndexedDB();
-      },
-    });
-
-    function updateRowNumbers() {
-      const data = hot.getSourceData();
-      data.forEach((row, idx) => (row.__row = idx + 1));
-      hot.render();
-    }
-
-    function getUserRows() {
-      return hot
-        .getSourceData()
-        .filter((r) => r && (r.ticker || r.shares || r.price_bought))
-        .map((r) => ({
-          ticker: (r.ticker || "").toString().trim(),
-          shares: Number(r.shares) || 0,
-          price_bought: Number(r.price_bought) || 0,
-          date_bought: (r.date_bought || "").toString().trim(),
-        }));
-    }
-
-    async function recalc() {
-      const payload = { rows: getUserRows() };
-      if (!payload.rows.length) {
-        hot.loadData([]);
-        updateRowNumbers();
-        return;
-      }
-      try {
-        const res = await fetch("/recalculate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error(`Backend error: ${res.status}`);
-        const data = await res.json();
-        const merged = data.rows.map((r, idx) => {
-          if (r.error) {
-            return {
-              __row: idx + 1,
-              ...r,
-              current_price: "Err",
-              position_value: "Err",
-              atr: "Err",
-              atr_change: "Err",
-              pct_change: "Err",
-              beta: "Err",
-              weight: "Err",
-              var: "Err",
-              iv: "Err",
-              sector: r.error, // Show error message in Sector column or similar
-            };
-          }
-          return { __row: idx + 1, ...r };
-        });
-        hot.loadData(merged);
-        updateRowNumbers();
-      } catch (err) {
-        console.error(err);
-        const rows = payload.rows.map((r, idx) => ({
-          __row: idx + 1,
-          ...r,
-          current_price: "Err",
-          position_value: "Err",
-          atr: "Err",
-          atr_change: "Err",
-          pct_change: "Err",
-          beta: "Err",
-          weight: "Err",
-          var: "Err",
-          iv: "Err",
-          sector: "Err",
-        }));
-        hot.loadData(rows);
-        updateRowNumbers();
-      }
-    }
-
-    let recalcTimer = null;
-    function debounceRecalc() {
-      clearTimeout(recalcTimer);
-      recalcTimer = setTimeout(recalc, 600);
-    }
-
-    document.getElementById("addRow").addEventListener("click", () => {
-      hot.alter("insert_row_above", hot.countRows());
-      updateRowNumbers();
-    });
-
-    document.getElementById("removeRow").addEventListener("click", () => {
-      const sel = hot.getSelectedLast();
-      if (!sel) return;
-      const [startRow, , endRow] = sel;
-      const from = Math.min(startRow, endRow);
-      const to = Math.max(startRow, endRow);
-      for (let r = to; r >= from; r -= 1) {
-        hot.alter("remove_row", r);
-      }
-      updateRowNumbers();
-      saveToIndexedDB();
-    });
-
-    document.getElementById("recalc").addEventListener("click", () => {
-      recalc();
-      saveToIndexedDB();
-    });
-
-    function openDb() {
-      return new Promise((resolve, reject) => {
-        const req = indexedDB.open(STORAGE_DB, 1);
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(STORAGE_STORE)) {
-            db.createObjectStore(STORAGE_STORE);
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-    }
-
-    async function saveToIndexedDB() {
-      try {
-        const db = await openDb();
-        const tx = db.transaction(STORAGE_STORE, "readwrite");
-        tx.objectStore(STORAGE_STORE).put(getUserRows(), "rows");
-        tx.oncomplete = () => db.close();
-      } catch (e) {
-        console.warn("Persistence failed", e);
-      }
-    }
-
-    async function loadFromIndexedDB() {
-      try {
-        const db = await openDb();
-        const tx = db.transaction(STORAGE_STORE, "readonly");
-        const req = tx.objectStore(STORAGE_STORE).get("rows");
-        return await new Promise((resolve) => {
-          req.onsuccess = () => resolve(req.result || []);
-          req.onerror = () => resolve([]);
-        });
-      } catch (e) {
-        return [];
-      }
-    }
-
-    (async function init() {
-      const saved = await loadFromIndexedDB();
-      hot.loadData(saved.map((r, idx) => ({ __row: idx + 1, ...r })));
-      updateRowNumbers();
-      if (saved.length) {
-        recalc();
-      } else {
-        hot.alter("insert_row_above", 0);
-        updateRowNumbers();
-      }
-    })();
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

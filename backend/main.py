@@ -1,7 +1,7 @@
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import numpy as np
 import pandas as pd
@@ -39,6 +39,21 @@ class PositionOut(PositionIn):
     atr_change: Optional[float] = None
     pct_change: Optional[float] = None
     sector: Optional[str] = None
+    market_cap: Optional[float] = None
+    
+    # New fields
+    value_paid: Optional[float] = None
+    no_atrs: Optional[float] = None
+    take_profit: Optional[float] = None
+    stop_loss: Optional[float] = None
+    current_tp: Optional[float] = None
+    current_sl: Optional[float] = None
+    beta_weighted: Optional[float] = None
+    expected_return: Optional[float] = None
+    weighted_expected_return: Optional[float] = None
+    holding_period: Optional[int] = None
+    cap_formatted: Optional[str] = None
+    
     error: Optional[str] = None
 
 
@@ -48,6 +63,7 @@ class RecalculateRequest(BaseModel):
 
 class RecalculateResponse(BaseModel):
     rows: List[PositionOut]
+    market_sector_weights: Optional[Dict[str, float]] = None
 
 
 app = FastAPI(title="RiskSheet Backend", version="1.0.0")
@@ -158,6 +174,18 @@ def fetch_ticker_data(ticker: str):
     return history, info
 
 
+def format_market_cap(val: float) -> str:
+    if not val:
+        return ""
+    if val >= 1e12:
+        return f"{val/1e12:.2f}T"
+    if val >= 1e9:
+        return f"{val/1e9:.2f}B"
+    if val >= 1e6:
+        return f"{val/1e6:.2f}M"
+    return f"{val:.2f}"
+
+
 def process_row(ticker: str, shares: float, price_bought: float, date_bought: Optional[str], market_returns: np.ndarray):
     ticker = ticker.upper()
     history, info = fetch_ticker_data(ticker)
@@ -167,6 +195,7 @@ def process_row(ticker: str, shares: float, price_bought: float, date_bought: Op
     current_price = float(round(closes.iloc[-1], 4))
     returns = np.log(closes / closes.shift(1)).dropna().to_numpy()
     position_value = float(round(current_price * shares, 2))
+    value_paid = float(round(price_bought * shares, 2))
 
     atr_series = compute_atr_series(history)
     current_atr = float(round(atr_series.iloc[-1], 4)) if atr_series is not None and not np.isnan(atr_series.iloc[-1]) else None
@@ -187,9 +216,11 @@ def process_row(ticker: str, shares: float, price_bought: float, date_bought: Op
             # Price not found in history
             raise ValueError(f"Price {price_bought} not found in history")
     
+    holding_period = 0
     if inferred_date and atr_series is not None:
         try:
             dt = datetime.strptime(inferred_date, "%Y-%m-%d")
+            holding_period = (datetime.now() - dt).days
             # Find the closest date in history (on or before)
             idx = history.index.get_indexer([dt], method='pad')[0]
             if idx != -1:
@@ -206,6 +237,33 @@ def process_row(ticker: str, shares: float, price_bought: float, date_bought: Op
     atr_change = round(current_atr - entry_atr, 4) if current_atr is not None and entry_atr is not None else None
     pct_change = round((current_price - price_bought) / price_bought, 4) if price_bought > 0 else 0.0
     sector = info.get("sector", "Unknown")
+    market_cap = info.get("marketCap")
+    cap_formatted = format_market_cap(market_cap) if market_cap else None
+
+    # New Calculations
+    no_atrs = None
+    if entry_atr and entry_atr > 0:
+        no_atrs = round((current_price - price_bought) / entry_atr, 4)
+    
+    take_profit = None
+    stop_loss = None
+    current_tp = None
+    current_sl = None
+    if entry_atr:
+        take_profit = round(price_bought + 2 * entry_atr, 2)
+        stop_loss = round(price_bought - 2 * entry_atr, 2)
+    
+    if current_atr:
+        current_tp = round(current_price + 2 * current_atr, 2)
+        current_sl = round(current_price - 2 * current_atr, 2)
+
+    # CAPM Expected Return
+    # Rf + Beta * (Rm - Rf)
+    # Estimate Rm from market_returns (annualized)
+    expected_return = None
+    if beta is not None and market_returns.size > 0:
+        annual_market_return = np.mean(market_returns) * 252
+        expected_return = round(RISK_FREE_RATE + beta * (annual_market_return - RISK_FREE_RATE), 6)
 
     return PositionOut(
         ticker=ticker,
@@ -223,6 +281,16 @@ def process_row(ticker: str, shares: float, price_bought: float, date_bought: Op
         atr_change=atr_change,
         pct_change=pct_change,
         sector=sector,
+        market_cap=market_cap,
+        value_paid=value_paid,
+        no_atrs=no_atrs,
+        take_profit=take_profit,
+        stop_loss=stop_loss,
+        current_tp=current_tp,
+        current_sl=current_sl,
+        expected_return=expected_return,
+        holding_period=holding_period,
+        cap_formatted=cap_formatted
     )
 
 
@@ -234,12 +302,36 @@ def get_market_returns() -> np.ndarray:
     return np.log(closes / closes.shift(1)).dropna().to_numpy()
 
 
+def get_market_sector_weights() -> Dict[str, float]:
+    try:
+        spy = yf.Ticker(MARKET_PROXY)
+        # Try funds_data (newer yfinance)
+        if hasattr(spy, 'funds_data') and spy.funds_data and spy.funds_data.sector_weightings:
+            return spy.funds_data.sector_weightings
+        
+        # Fallback to info
+        info = spy.info
+        if 'sectorWeightings' in info:
+            # Usually a list of dicts: [{'sector': '...', 'weight': ...}]
+            sw = info['sectorWeightings']
+            if isinstance(sw, list):
+                return {item['sector']: item['weight'] for item in sw}
+            elif isinstance(sw, dict):
+                return sw
+        
+        return {}
+    except Exception:
+        return {}
+
+
 @app.post("/recalculate", response_model=RecalculateResponse)
 def recalculate(payload: RecalculateRequest):
     if not payload.rows:
         return RecalculateResponse(rows=[])
 
     market_returns = get_market_returns()
+    market_sector_weights = get_market_sector_weights()
+
     processed = []
     for row in payload.rows:
         try:
@@ -257,8 +349,12 @@ def recalculate(payload: RecalculateRequest):
     total_value = sum(row.position_value for row in processed if row.position_value)
     for row in processed:
         row.weight = round(row.position_value / total_value, 4) if total_value else None
+        if row.beta is not None and row.weight is not None:
+            row.beta_weighted = round(row.beta * row.weight, 6)
+        if row.expected_return is not None and row.weight is not None:
+            row.weighted_expected_return = round(row.expected_return * row.weight, 6)
 
-    return RecalculateResponse(rows=processed)
+    return RecalculateResponse(rows=processed, market_sector_weights=market_sector_weights)
 
 
 base_dir = Path(__file__).resolve().parent
