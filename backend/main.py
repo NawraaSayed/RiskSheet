@@ -22,17 +22,20 @@ from backend.db.database import (
     get_cash,
     update_cash,
     get_sector_allocations,
-    upsert_sector_allocation
+    upsert_sector_allocation,
+    delete_sector_allocation
 )
 
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response, Depends, status, Form
+from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from itsdangerous import URLSafeTimedSerializer
 
 
 RISK_FREE_RATE = 0.0488  # fixed risk-free rate
@@ -41,6 +44,30 @@ ATR_WINDOW = 14
 VAR_SIMULATIONS = 5000
 VAR_CONFIDENCE = 0.95
 IV_TENOR_DAYS = 30
+
+# Auth Configuration
+SECRET_KEY = "super-secret-key-change-this-in-production"
+ALLOWED_USERS = ['Ali', 'MB', 'MA', 'Malak', 'Leena', 'Nawraa', 'Habbash', 'Alisha']
+AUTH_PASSWORD = "AliEffect-9"
+signer = URLSafeTimedSerializer(SECRET_KEY, salt="cookie-session")
+
+def get_current_user(request: Request):
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+    try:
+        data = signer.loads(token, max_age=86400) # 1 day
+        if data["username"] in ALLOWED_USERS:
+            return data["username"]
+    except:
+        pass
+    return None
+
+def require_user(user: Optional[str] = Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return user
+
 
 
 class PositionIn(BaseModel):
@@ -105,6 +132,35 @@ class SectorAllocationUpdate(BaseModel):
 
 app = FastAPI(title="RiskSheet Backend", version="1.0.0")
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@app.post("/api/login")
+def login(data: LoginRequest, response: Response):
+    if data.username in ALLOWED_USERS and data.password == AUTH_PASSWORD:
+        token = signer.dumps({"username": data.username})
+        response.set_cookie(
+            key="access_token",
+            value=token,
+            httponly=True,
+            max_age=86400,
+            samesite="lax",
+            secure=False # Set to True in production with HTTPS
+        )
+        return {"message": "Logged in"}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.post("/api/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token")
+    return {"message": "Logged out"}
+
+@app.get("/api/check-auth")
+def check_auth(user: Optional[str] = Depends(get_current_user)):
+    return {"authenticated": user is not None, "user": user}
+
+
 @app.on_event("startup")
 def startup():
     try:
@@ -116,12 +172,12 @@ def startup():
         pass
 
 
-@app.get("/positions", response_model=List[PositionDB])
+@app.get("/positions", response_model=List[PositionDB], dependencies=[Depends(require_user)])
 def read_positions():
     return get_all_positions()
 
 
-@app.post("/positions", response_model=PositionDB)
+@app.post("/positions", response_model=PositionDB, dependencies=[Depends(require_user)])
 def create_position(pos: PositionIn):
     try:
         ticker = pos.ticker.strip().upper()
@@ -144,31 +200,34 @@ def create_position(pos: PositionIn):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/positions/{ticker}")
+@app.delete("/positions/{ticker}", dependencies=[Depends(require_user)])
 def delete_position_endpoint(ticker: str):
     delete_position(ticker.strip().upper())
     return {"ok": True}
 
 
-@app.get("/cash", response_model=CashUpdate)
+@app.get("/cash", response_model=CashUpdate, dependencies=[Depends(require_user)])
 def read_cash():
     return {"amount": get_cash()}
 
 
-@app.put("/cash", response_model=CashUpdate)
+@app.put("/cash", response_model=CashUpdate, dependencies=[Depends(require_user)])
 def update_cash_endpoint(cash: CashUpdate):
     update_cash(cash.amount)
     return cash
 
 
-@app.get("/sector-allocations", response_model=Dict[str, float])
+@app.get("/sector-allocations", response_model=Dict[str, float], dependencies=[Depends(require_user)])
 def read_sector_allocations():
     return get_sector_allocations()
 
 
-@app.put("/sector-allocations")
+@app.put("/sector-allocations", dependencies=[Depends(require_user)])
 def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
-    upsert_sector_allocation(alloc.sector, alloc.allocation)
+    if alloc.allocation == 0:
+        delete_sector_allocation(alloc.sector)
+    else:
+        upsert_sector_allocation(alloc.sector, alloc.allocation)
     return {"ok": True}
 
 
@@ -429,7 +488,7 @@ def get_market_sector_weights() -> Dict[str, float]:
         return {}
 
 
-@app.post("/recalculate", response_model=RecalculateResponse)
+@app.post("/recalculate", response_model=RecalculateResponse, dependencies=[Depends(require_user)])
 def recalculate(payload: RecalculateRequest):
     if not payload.rows:
         return RecalculateResponse(rows=[])
@@ -479,7 +538,23 @@ for d in possible_dirs:
         break
 
 if static_dir:
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    # Serve login page
+    @app.get("/login")
+    def login_page():
+        return FileResponse(static_dir / "login.html")
+
+    # Protect root
+    @app.get("/")
+    def root(request: Request):
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse(url="/login")
+        return FileResponse(static_dir / "index.html")
+
+    # Mount static files for assets (js, css)
+    # We mount at root but disable html=True so it doesn't serve index.html automatically at /
+    app.mount("/", StaticFiles(directory=static_dir, html=False), name="static")
+
 else:
     # Fallback if frontend is missing
     @app.get("/")

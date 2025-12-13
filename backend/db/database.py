@@ -207,6 +207,16 @@ def upsert_sector_allocation(sector: str, allocation: float):
         conn.close()
 
 
+def delete_sector_allocation(sector: str):
+    """Delete a sector allocation."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM sector_allocations WHERE sector = ?", (sector,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def clear_sector_allocations():
     """Clear all sector allocations."""
     conn = get_connection()

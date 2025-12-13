@@ -257,6 +257,17 @@ const hot4 = new Handsontable(sheet4El, {
     }
     return { readOnly: true, className: "locked htCenter htMiddle" };
   },
+  beforeChange: (changes, source) => {
+    if (!changes || source === "loadData") return;
+    changes.forEach((change) => {
+      if (change[1] === 'set_allocation') {
+        const val = parseFloat(change[3]);
+        if (!isNaN(val) && Math.abs(val) > 1) {
+          change[3] = val / 100;
+        }
+      }
+    });
+  },
   afterChange: (changes, source) => {
     if (!changes || source === "loadData" || source === "updateSectorTable") return;
     
