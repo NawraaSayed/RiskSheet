@@ -464,12 +464,32 @@ def recalculate(payload: RecalculateRequest):
 
 # Serve static files (frontend)
 base_dir = Path(__file__).resolve().parent
-static_dir = (base_dir.parent / "frontend").resolve()
+# Try multiple possible locations for frontend
+possible_dirs = [
+    base_dir.parent / "frontend",             # Standard local structure
+    base_dir / "frontend",                    # Nested
+    Path("/var/task/frontend"),               # Vercel Lambda root
+    Path("frontend").resolve(),               # CWD relative
+]
 
-if static_dir.exists():
+static_dir = None
+for d in possible_dirs:
+    if d.exists() and d.is_dir():
+        static_dir = d
+        break
+
+if static_dir:
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 else:
-    # Fallback if frontend is missing (e.g. during some build steps)
+    # Fallback if frontend is missing
     @app.get("/")
     def root():
-        return {"message": "RiskSheet Backend is running (Frontend not found)"}
+        import os
+        cwd = os.getcwd()
+        ls = os.listdir(cwd)
+        return {
+            "message": "RiskSheet Backend is running (Frontend NOT found)",
+            "cwd": cwd,
+            "ls": ls,
+            "searched_paths": [str(p) for p in possible_dirs]
+        }
