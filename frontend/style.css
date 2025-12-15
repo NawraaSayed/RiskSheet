@@ -11,11 +11,21 @@
   --hover-bg: #2d3748;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", Tahoma, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
+  height: 100vh;
+  z-index: -1;
+}
+
+header, .tabs, .sheet-wrap {
+  z-index: 1;
 }
 
 header {

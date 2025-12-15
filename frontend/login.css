@@ -1,0 +1,469 @@
+body {
+    box-sizing: border-box;
+}
+
+/* Import technical fonts */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=Inter:wght@400;500;700&display=swap');
+
+:root {
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+    --color-bg: #0f1419;
+    --color-text: #e2e8f0;
+    --color-blue: #0ea5e9;
+    --color-blue-rgb: 14, 165, 233;
+    --color-green: #10b981;
+    --color-green-rgb: 16, 185, 129;
+    --color-panel: rgba(23, 37, 52, 0.4);
+    --color-panel-border: rgba(14, 165, 233, 0.2);
+    --color-input-bg: rgba(15, 23, 42, 0.6);
+    --color-input-bg-focus: rgba(15, 23, 42, 0.8);
+    --color-placeholder: rgba(148, 163, 184, 0.3);
+    --color-muted: rgba(100, 116, 139, 0.6);
+    --color-muted-50: rgba(100, 116, 139, 0.5);
+    --color-error: #ef4444;
+    --color-error-bg: rgba(239, 68, 68, 0.08);
+    --color-error-border: rgba(239, 68, 68, 0.3);
+    --color-error-text: #fca5a5;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    width: 100%;
+}
+
+body {
+    font-family: var(--font-body);
+    color: var(--color-text);
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Scientific control room background */
+.observatory-wrapper {
+    min-height: 100%;
+    width: 100%;
+    background: var(--color-bg);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+/* Data grid overlay */
+.observatory-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+    linear-gradient(rgba(var(--color-blue-rgb), 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--color-blue-rgb), 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+}
+
+/* Scan line effect */
+.observatory-wrapper::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(var(--color-blue-rgb), 0.015) 2px,
+    rgba(var(--color-blue-rgb), 0.015) 4px
+    );
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+/* Glassy research console */
+.login-container {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    background: var(--color-panel);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--color-panel-border);
+    border-radius: 20px;
+    padding: 3rem 2.5rem;
+    box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 60px rgba(var(--color-blue-rgb), 0.08);
+    z-index: 10;
+}
+
+/* Technical corner brackets */
+.login-container::before,
+.login-container::after {
+    content: '';
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border: 1.5px solid rgba(var(--color-blue-rgb), 0.6);
+    z-index: 1;
+}
+
+.login-container::before {
+    top: 16px;
+    left: 16px;
+    border-right: none;
+    border-bottom: none;
+}
+
+.login-container::after {
+    bottom: 16px;
+    right: 16px;
+    border-left: none;
+    border-top: none;
+}
+
+.login-header::before {
+    top: 16px;
+    right: 16px;
+    border-left: none;
+    border-bottom: none;
+}
+
+form::after {
+    bottom: 16px;
+    left: 16px;
+    border-right: none;
+    border-top: none;
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+    position: relative;
+    padding-bottom: 1.5rem;
+}
+
+/* Waveform separator */
+.login-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    height: 2px;
+    background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--color-blue-rgb), 0.3) 20%,
+    rgba(var(--color-blue-rgb), 0.6) 50%,
+    rgba(var(--color-blue-rgb), 0.3) 80%,
+    transparent
+    );
+}
+
+.login-header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--color-text);
+    margin-bottom: 0.75rem;
+    text-shadow: 0 0 20px rgba(var(--color-blue-rgb), 0.3);
+}
+
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+    position: relative;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    position: relative;
+}
+
+/* Scientific measurement labels */
+.form-group label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: rgba(var(--color-blue-rgb), 0.8);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Sensor indicator */
+.form-group label::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: rgba(var(--color-green-rgb), 0.6);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(var(--color-green-rgb), 0.6);
+}
+
+/* Data readout code */
+.form-group label::after {
+    content: attr(data-code);
+    font-size: 0.625rem;
+    color: var(--color-muted);
+    margin-left: auto;
+    letter-spacing: 0.05em;
+}
+
+#username + label::after {
+    content: '[ID-AUTH]';
+}
+
+#password + label::after {
+    content: '[SEC-KEY]';
+}
+
+/* Data sensor inputs */
+.form-group input {
+    font-family: var(--font-mono);
+    background: var(--color-input-bg);
+    border: 1px solid rgba(var(--color-blue-rgb), 0.25);
+    border-radius: 10px;
+    padding: 0.9rem 1.125rem;
+    font-size: 0.9375rem;
+    color: var(--color-text);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    outline: none;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.form-group input::placeholder {
+    color: var(--color-placeholder);
+    font-style: italic;
+}
+
+.form-group input:focus {
+    border-color: rgba(var(--color-blue-rgb), 0.6);
+    background: var(--color-input-bg-focus);
+    box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.2),
+    0 0 0 3px rgba(var(--color-blue-rgb), 0.1),
+    0 0 16px rgba(var(--color-blue-rgb), 0.2);
+}
+
+/* Active sensor state */
+.form-group:focus-within label::before {
+    background: rgba(var(--color-blue-rgb), 0.9);
+    box-shadow: 0 0 12px rgba(var(--color-blue-rgb), 0.8);
+}
+
+/* Analysis button */
+.login-btn {
+    font-family: var(--font-body);
+    margin-top: 1.25rem;
+    padding: 1rem 1.5rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-bg);
+    background: linear-gradient(135deg, var(--color-blue) 0%, var(--color-green) 100%);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 
+    0 4px 16px rgba(var(--color-blue-rgb), 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Shimmer effect */
+.login-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+    );
+    transition: left 0.6s ease;
+}
+
+.login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+    0 6px 24px rgba(var(--color-blue-rgb), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.login-btn:hover::before {
+    left: 100%;
+}
+
+.login-btn:active {
+    transform: translateY(0);
+}
+
+/* Status indicator */
+.login-btn::after {
+    content: '›';
+    margin-left: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+/* Error diagnostic message */
+.error-msg {
+    display: none;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--color-error-text);
+    text-align: center;
+    padding: 0.875rem 1rem;
+    background: var(--color-error-bg);
+    border: 1px solid var(--color-error-border);
+    border-left: 3px solid var(--color-error);
+    border-radius: 8px;
+    margin-top: 1rem;
+    letter-spacing: 0.02em;
+}
+
+.error-msg::before {
+    content: '⚠ ERROR: ';
+    font-weight: 600;
+    color: var(--color-error);
+}
+
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .login-container {
+    padding: 2.5rem 2rem;
+    }
+    
+    .login-header h1 {
+    font-size: 1.375rem;
+    }
+    
+    .observatory-wrapper {
+    padding: 1rem;
+    }
+    
+    .observatory-wrapper::before {
+    background-size: 30px 30px;
+    }
+}
+
+@media (max-width: 400px) {
+    .login-container {
+    padding: 2rem 1.5rem;
+    }
+    
+    .login-header h1 {
+    font-size: 1.25rem;
+    }
+
+    .form-group input,
+    .login-btn {
+    font-size: 0.875rem;
+    }
+}
+
+/* --- Sprites: floating code snippets & formulas (slow appearance) --- */
+.code-sprites {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 0;
+}
+
+.code-sprite {
+    position: absolute;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: nowrap;
+    color: rgba(var(--color-blue-rgb), 0.8);
+    opacity: 0;
+    transform-origin: center;
+    will-change: transform, opacity;
+    mix-blend-mode: normal;
+    text-shadow: 0 0 6px rgba(0,0,0,0.35);
+    transition: opacity 3s ease-in-out, transform 8s ease-in-out;
+}
+
+.code-sprite.py { color: rgba(var(--color-blue-rgb), 0.6); }
+.code-sprite.js { color: rgba(241,224,90,0.7); }
+.code-sprite.java { color: rgba(239,115,45,0.6); }
+.code-sprite.go { color: rgba(72,149,239,0.6); }
+.code-sprite.asm { color: rgba(168,85,247,0.6); }
+.code-sprite.stock { color: rgba(140,140,140,0.6); }
+.code-sprite.highlight { filter: brightness(1.15); }
+.code-sprite.warn { filter: hue-rotate(-10deg) saturate(1.1); }
+
+.code-sprite.visible { opacity: 0.18; }
+.code-sprite.visible.bright { opacity: 0.68; filter: brightness(1.25) drop-shadow(0 0 10px rgba(255,255,255,0.06)); }
+
+.formula-sprite {
+    position: absolute;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: rgba(var(--color-blue-rgb), 0.22);
+    opacity: 0;
+    white-space: nowrap;
+    pointer-events: none;
+    mix-blend-mode: normal;
+    text-shadow: 0 0 3px rgba(var(--color-blue-rgb), 0.06);
+    transition: opacity 3s ease-in-out, transform 8s ease-in-out;
+}
+
+.formula-sprite.visible { opacity: 0.28; }
+
+@keyframes floaty {
+    0% { transform: translate3d(0,0,0) rotate(0deg); }
+    50% { transform: translate3d(8px,-8px,0) rotate(0.6deg); }
+    100% { transform: translate3d(0,0,0) rotate(0deg); }
+}
+
+/* continuous drifting animation uses per-element CSS vars --dx/--dy/--rot */
+@keyframes drift {
+    0% { transform: translate3d(0,0,0) rotate(var(--rot, 0deg)); }
+    50% { transform: translate3d(var(--dx, 8px), var(--dy, -8px), 0) rotate(calc(var(--rot, 0deg) + 0.6deg)); }
+    100% { transform: translate3d(0,0,0) rotate(var(--rot, 0deg)); }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.code-sprite > .rot,
+.formula-sprite > .rot {
+    display: inline-block;
+    transform-origin: center;
+    /* rotation disabled: no continuous spin applied */
+}
+
