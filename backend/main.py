@@ -217,15 +217,8 @@ async def create_position(pos: PositionIn):
         date_bought = pos.date_bought if pos.date_bought else None
         insert_position(ticker, shares, price_bought, date_bought)
         
-        # Broadcast the new position to all connected clients - include data so they don't need to fetch
-        await manager.broadcast({
-            "type": "position_added",
-            "ticker": ticker,
-            "shares": shares,
-            "price_bought": price_bought,
-            "date_bought": date_bought,
-            "action": "reload_positions"  # Tell clients to reload from /positions API
-        })
+        # Polling will detect the new position automatically
+        # No WebSocket broadcast needed - Vercel doesn't support WebSockets
         
         # Return the object with the cleaned date
         return PositionDB(
@@ -244,12 +237,8 @@ async def delete_position_endpoint(ticker: str):
     ticker = ticker.strip().upper()
     delete_position(ticker)
     
-    # Broadcast the deletion to all connected clients
-    await manager.broadcast({
-        "type": "position_deleted",
-        "ticker": ticker,
-        "action": "reload_positions"
-    })
+    # Polling will detect the deletion automatically
+    # No WebSocket broadcast needed - Vercel doesn't support WebSockets
     
     return {"ok": True}
 
