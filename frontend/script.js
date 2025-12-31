@@ -28,23 +28,53 @@ function initWebSocket() {
         if (message.type === 'position_added') {
           // A new position was added by another user or client
           console.log(`Position added: ${message.ticker}`);
-          // Trigger a recalculation to refresh all data
-          recalc();
+          // Load fresh positions from backend with delay to ensure DB is synced
+          setTimeout(async () => {
+            console.log(`[Sync] Fetching fresh positions after position added`);
+            const fresh = await loadFromBackend();
+            console.log(`[Sync] Loaded ${fresh.length} positions from backend`);
+            hot.loadData(fresh.map((r, idx) => ({ __row: idx + 1, ...r })));
+            updateRowNumbers();
+            recalc();
+          }, 500);  // Increased delay to ensure database is committed
         } else if (message.type === 'position_deleted') {
           // A position was deleted by another user or client
           console.log(`Position deleted: ${message.ticker}`);
-          // Trigger a recalculation to refresh all data
-          recalc();
+          // Load fresh positions from backend with delay to ensure DB is synced
+          setTimeout(async () => {
+            console.log(`[Sync] Fetching fresh positions after position deleted`);
+            const fresh = await loadFromBackend();
+            console.log(`[Sync] Loaded ${fresh.length} positions from backend`);
+            hot.loadData(fresh.map((r, idx) => ({ __row: idx + 1, ...r })));
+            updateRowNumbers();
+            recalc();
+          }, 500);
+        } else if (message.type === 'data_updated') {
+          // Data was updated (from position_saved or other changes)
+          console.log(`Data updated: ${message.reason}`);
+          // Only recalculate, don't reload the positions table
+          setTimeout(() => {
+            console.log(`[Sync] Recalculating after data update`);
+            recalc();
+          }, 300);
         } else if (message.type === 'cash_updated') {
           // Cash was updated by another user or client
           console.log(`Cash updated to: ${message.amount}`);
-          // Reload positions and recalculate
-          recalc();
+          // Load fresh cash value and recalculate
+          setTimeout(async () => {
+            cachedCash = await loadCashValue();
+            updatePortfolioSummary();
+            recalc();
+          }, 300);
         } else if (message.type === 'sector_allocation_updated') {
           // Sector allocation was updated by another user or client
           console.log(`Sector allocation updated: ${message.sector} = ${message.allocation}`);
-          // Trigger a recalculation to refresh portfolio summary
-          recalc();
+          // Load fresh sector allocations
+          setTimeout(async () => {
+            cachedAllocations = await loadSectorAllocations();
+            updateSectorTable();
+            recalc();
+          }, 300);
         }
       } catch (e) {
         console.error("Failed to parse WebSocket message:", e);
@@ -986,6 +1016,14 @@ async function savePosition(row) {
     if (res.ok) {
         const data = await res.json();
         console.log("Saved position:", data);
+        // After successful save, trigger a broadcast to other users
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'position_saved',
+            ticker: ticker,
+            timestamp: new Date().toISOString()
+          }));
+        }
         return data;
     } else {
         const errorText = await res.text();
@@ -1005,11 +1043,20 @@ async function saveSectorAllocations() {
   // Save each sector allocation
   try {
     for (const [sector, allocation] of Object.entries(cachedAllocations)) {
-      await fetch('/sector-allocations', {
+      const res = await fetch('/sector-allocations', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sector, allocation })
       });
+      // After successful save, broadcast to other users
+      if (res.ok && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'allocation_saved',
+          sector: sector,
+          allocation: allocation,
+          timestamp: new Date().toISOString()
+        }));
+      }
     }
   } catch (e) {
     console.warn("Sector persistence failed", e);
@@ -1028,11 +1075,19 @@ async function loadSectorAllocations() {
 
 async function saveCashValue() {
   try {
-    await fetch('/cash', {
+    const res = await fetch('/cash', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount: cachedCash })
     });
+    // After successful save, broadcast to other users
+    if (res.ok && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'cash_saved',
+        amount: cachedCash,
+        timestamp: new Date().toISOString()
+      }));
+    }
   } catch (e) {
     console.warn("Cash persistence failed", e);
   }
@@ -1091,6 +1146,7 @@ hot.addHook('afterChange', async (changes, source) => {
     if (hasTicker && hasShares && hasPrice) {
       rowData._is_ready = true;
       await savePosition(rowData);
+      // savePosition() already broadcasts via WebSocket when successful
     }
   }
 });

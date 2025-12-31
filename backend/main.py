@@ -217,13 +217,14 @@ async def create_position(pos: PositionIn):
         date_bought = pos.date_bought if pos.date_bought else None
         insert_position(ticker, shares, price_bought, date_bought)
         
-        # Broadcast the new position to all connected clients
+        # Broadcast the new position to all connected clients - include data so they don't need to fetch
         await manager.broadcast({
             "type": "position_added",
             "ticker": ticker,
             "shares": shares,
             "price_bought": price_bought,
-            "date_bought": date_bought
+            "date_bought": date_bought,
+            "action": "reload_positions"  # Tell clients to reload from /positions API
         })
         
         # Return the object with the cleaned date
@@ -246,7 +247,8 @@ async def delete_position_endpoint(ticker: str):
     # Broadcast the deletion to all connected clients
     await manager.broadcast({
         "type": "position_deleted",
-        "ticker": ticker
+        "ticker": ticker,
+        "action": "reload_positions"
     })
     
     return {"ok": True}
@@ -260,8 +262,48 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Keep the connection open and listen for messages
             data = await websocket.receive_text()
-            # Optional: handle incoming messages if needed
-            print(f"WebSocket message received: {data}")
+            try:
+                message = json.loads(data)
+                print(f"WebSocket message received: {message}")
+                
+                # Handle cell_updated messages and broadcast to all clients
+                if message.get('type') == 'cell_updated':
+                    # Broadcast the cell update to all connected clients
+                    await manager.broadcast({
+                        "type": "cell_updated",
+                        "ticker": message.get('ticker'),
+                        "field": message.get('field'),
+                        "value": message.get('value'),
+                        "row": message.get('row'),
+                        "timestamp": message.get('timestamp')
+                    })
+                elif message.get('type') == 'position_saved':
+                    # A position was saved, broadcast to trigger refresh on other clients
+                    await manager.broadcast({
+                        "type": "data_updated",
+                        "reason": "position_saved",
+                        "ticker": message.get('ticker'),
+                        "timestamp": message.get('timestamp')
+                    })
+                elif message.get('type') == 'cash_saved':
+                    # Cash was saved, broadcast to all clients
+                    await manager.broadcast({
+                        "type": "data_updated",
+                        "reason": "cash_saved",
+                        "amount": message.get('amount'),
+                        "timestamp": message.get('timestamp')
+                    })
+                elif message.get('type') == 'allocation_saved':
+                    # Allocation was saved, broadcast to all clients
+                    await manager.broadcast({
+                        "type": "data_updated",
+                        "reason": "allocation_saved",
+                        "sector": message.get('sector'),
+                        "allocation": message.get('allocation'),
+                        "timestamp": message.get('timestamp')
+                    })
+            except json.JSONDecodeError:
+                print(f"Invalid JSON in WebSocket message: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
