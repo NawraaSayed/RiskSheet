@@ -1,8 +1,9 @@
 import math
 import os
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set
 
 # Configure yfinance cache for Vercel
 if os.environ.get("VERCEL"):
@@ -30,7 +31,7 @@ from backend.db.database import (
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from fastapi import FastAPI, HTTPException, Request, Response, Depends, status, Form
+from fastapi import FastAPI, HTTPException, Request, Response, Depends, status, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -132,6 +133,33 @@ class SectorAllocationUpdate(BaseModel):
 
 app = FastAPI(title="RiskSheet Backend", version="1.0.0")
 
+# WebSocket Connection Manager for real-time updates
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.discard(websocket)
+
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients"""
+        disconnected = set()
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.add(connection)
+        
+        # Remove disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+manager = ConnectionManager()
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -178,7 +206,7 @@ def read_positions():
 
 
 @app.post("/positions", response_model=PositionDB, dependencies=[Depends(require_user)])
-def create_position(pos: PositionIn):
+async def create_position(pos: PositionIn):
     try:
         ticker = pos.ticker.strip().upper()
         if not ticker:
@@ -188,6 +216,16 @@ def create_position(pos: PositionIn):
         # Convert empty string date to None
         date_bought = pos.date_bought if pos.date_bought else None
         insert_position(ticker, shares, price_bought, date_bought)
+        
+        # Broadcast the new position to all connected clients
+        await manager.broadcast({
+            "type": "position_added",
+            "ticker": ticker,
+            "shares": shares,
+            "price_bought": price_bought,
+            "date_bought": date_bought
+        })
+        
         # Return the object with the cleaned date
         return PositionDB(
             ticker=ticker,
@@ -201,9 +239,34 @@ def create_position(pos: PositionIn):
 
 
 @app.delete("/positions/{ticker}", dependencies=[Depends(require_user)])
-def delete_position_endpoint(ticker: str):
-    delete_position(ticker.strip().upper())
+async def delete_position_endpoint(ticker: str):
+    ticker = ticker.strip().upper()
+    delete_position(ticker)
+    
+    # Broadcast the deletion to all connected clients
+    await manager.broadcast({
+        "type": "position_deleted",
+        "ticker": ticker
+    })
+    
     return {"ok": True}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time updates"""
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep the connection open and listen for messages
+            data = await websocket.receive_text()
+            # Optional: handle incoming messages if needed
+            print(f"WebSocket message received: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        manager.disconnect(websocket)
 
 
 @app.get("/cash", response_model=CashUpdate, dependencies=[Depends(require_user)])
@@ -212,8 +275,15 @@ def read_cash():
 
 
 @app.put("/cash", response_model=CashUpdate, dependencies=[Depends(require_user)])
-def update_cash_endpoint(cash: CashUpdate):
+async def update_cash_endpoint(cash: CashUpdate):
     update_cash(cash.amount)
+    
+    # Broadcast the cash update to all connected clients
+    await manager.broadcast({
+        "type": "cash_updated",
+        "amount": cash.amount
+    })
+    
     return cash
 
 
@@ -223,11 +293,19 @@ def read_sector_allocations():
 
 
 @app.put("/sector-allocations", dependencies=[Depends(require_user)])
-def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
+async def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
     if alloc.allocation == 0:
         delete_sector_allocation(alloc.sector)
     else:
         upsert_sector_allocation(alloc.sector, alloc.allocation)
+    
+    # Broadcast the sector allocation update to all connected clients
+    await manager.broadcast({
+        "type": "sector_allocation_updated",
+        "sector": alloc.sector,
+        "allocation": alloc.allocation
+    })
+    
     return {"ok": True}
 
 

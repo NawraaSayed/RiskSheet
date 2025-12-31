@@ -2,6 +2,89 @@ const EDITABLE_COLS = ["ticker", "shares", "price_bought"];
 const STORAGE_DB = "riskSheet";
 const STORAGE_STORE = "rows";
 
+// ============ WebSocket Setup for Real-time Updates ============
+let ws = null;
+let wsReconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 3000;
+
+function initWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/ws`;
+  
+  try {
+    ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      wsReconnectAttempts = 0;
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        console.log("WebSocket message received:", message);
+        
+        if (message.type === 'position_added') {
+          // A new position was added by another user or client
+          console.log(`Position added: ${message.ticker}`);
+          // Trigger a recalculation to refresh all data
+          recalc();
+        } else if (message.type === 'position_deleted') {
+          // A position was deleted by another user or client
+          console.log(`Position deleted: ${message.ticker}`);
+          // Trigger a recalculation to refresh all data
+          recalc();
+        } else if (message.type === 'cash_updated') {
+          // Cash was updated by another user or client
+          console.log(`Cash updated to: ${message.amount}`);
+          // Reload positions and recalculate
+          recalc();
+        } else if (message.type === 'sector_allocation_updated') {
+          // Sector allocation was updated by another user or client
+          console.log(`Sector allocation updated: ${message.sector} = ${message.allocation}`);
+          // Trigger a recalculation to refresh portfolio summary
+          recalc();
+        }
+      } catch (e) {
+        console.error("Failed to parse WebSocket message:", e);
+      }
+    };
+    
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+    
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+      // Attempt to reconnect
+      if (wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        wsReconnectAttempts++;
+        console.log(`Attempting to reconnect (attempt ${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+        setTimeout(initWebSocket, RECONNECT_DELAY);
+      } else {
+        console.warn("Max reconnection attempts reached");
+      }
+    };
+  } catch (e) {
+    console.error("Failed to initialize WebSocket:", e);
+  }
+}
+
+// Initialize WebSocket when the page loads
+window.addEventListener('load', () => {
+  // Give the page a moment to fully load
+  setTimeout(initWebSocket, 500);
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close();
+  }
+});
+// ============ End WebSocket Setup ============
+
 function rowNumberRenderer(instance, td, row, col, prop, value, cellProperties) {
   Handsontable.renderers.TextRenderer.apply(this, arguments);
   td.innerHTML = `<div class="row-number-cell"><span class="row-num-text">${value}</span><button class="remove-row-btn" data-row="${row}">-</button></div>`;
