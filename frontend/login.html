@@ -6,95 +6,377 @@
   <title>Login - RiskSheet</title>
   <link rel="stylesheet" href="style.css">
   <style>
+    :root {
+      --editable: #1e3a5f;
+      --locked: #1a1f2e;
+      --border: #2d3748;
+      --accent: #3b82f6;
+      --bg-primary: #0f1419;
+      --bg-secondary: #1a1f2e;
+      --bg-card: #22272e;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b92a0;
+      --hover-bg: #2d3748;
+      --error: #f87171;
+      --success: #4ade80;
+    }
+
     body {
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      background-color: #f5f5f5;
+      min-height: 100vh;
+      background: var(--bg-primary);
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      padding: 20px;
     }
-    .login-container {
-      background: white;
-      padding: 2rem;
-      border-radius: 8px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+
+    .login-wrapper {
       width: 100%;
-      max-width: 400px;
+      max-width: 420px;
     }
+
+    .login-container {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      padding: 2.5rem;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     .login-header {
       text-align: center;
-      margin-bottom: 2rem;
+      margin-bottom: 2.5rem;
     }
-    .login-header h1 {
-      margin: 0;
-      color: #333;
-      font-size: 1.5rem;
-    }
-    .form-group {
+
+    .logo {
+      font-size: 2.5rem;
       margin-bottom: 1rem;
     }
+
+    .login-header h1 {
+      margin: 0 0 0.5rem 0;
+      color: var(--text-primary);
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    .login-header p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
     .form-group label {
       display: block;
-      margin-bottom: 0.5rem;
-      color: #666;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 0.95rem;
+      letter-spacing: 0.2px;
     }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
     .form-group input {
       width: 100%;
-      padding: 0.75rem;
-      border: 1px solid #ddd;
-      border-radius: 4px;
+      padding: 0.875rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
       font-size: 1rem;
+      color: var(--text-primary);
       box-sizing: border-box;
+      transition: all 0.2s ease;
+      font-family: inherit;
     }
+
+    .form-group input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+      background: var(--bg-card);
+    }
+
+    .form-group input:hover:not(:focus) {
+      border-color: var(--border);
+      background: #272e38;
+    }
+
+    .password-toggle {
+      position: absolute;
+      right: 1rem;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 0;
+      font-size: 1rem;
+      transition: color 0.2s ease;
+      padding: 0.5rem;
+      margin-right: -0.5rem;
+    }
+
+    .password-toggle:hover {
+      color: var(--accent);
+    }
+
     .login-btn {
       width: 100%;
-      padding: 0.75rem;
-      background-color: #007bff;
+      padding: 0.875rem 1rem;
+      background: var(--accent);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 8px;
       font-size: 1rem;
+      font-weight: 600;
       cursor: pointer;
-      transition: background-color 0.2s;
+      transition: all 0.2s ease;
+      letter-spacing: 0.2px;
+      margin-top: 0.5rem;
     }
+
     .login-btn:hover {
-      background-color: #0056b3;
+      background: #2563eb;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      transform: translateY(-1px);
     }
+
+    .login-btn:active {
+      transform: translateY(0);
+    }
+
+    .login-btn:disabled {
+      background: var(--text-secondary);
+      cursor: not-allowed;
+      opacity: 0.6;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 0.9rem;
+      height: 0.9rem;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.6s linear infinite;
+      margin-right: 0.5rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .button-content {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     .error-msg {
-      color: #dc3545;
+      background: rgba(248, 113, 113, 0.15);
+      border: 1px solid var(--error);
+      color: var(--error);
+      padding: 0.875rem 1rem;
+      border-radius: 8px;
+      margin-top: 1.5rem;
       text-align: center;
-      margin-top: 1rem;
+      font-size: 0.9rem;
       display: none;
+      animation: slideDown 0.2s ease-out;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .error-msg.show {
+      display: block;
+    }
+
+    .success-msg {
+      background: rgba(74, 222, 128, 0.15);
+      border: 1px solid var(--success);
+      color: var(--success);
+      padding: 0.875rem 1rem;
+      border-radius: 8px;
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: 0.9rem;
+      display: none;
+      animation: slideDown 0.2s ease-out;
+    }
+
+    .success-msg.show {
+      display: block;
+    }
+
+    .form-hint {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-top: 0.5rem;
+    }
+
+    /* Accessibility improvements */
+    input:focus-visible {
+      outline: none;
+    }
+
+    @media (max-width: 480px) {
+      .login-container {
+        padding: 2rem;
+        border-radius: 12px;
+      }
+
+      .login-header h1 {
+        font-size: 1.5rem;
+      }
+
+      .login-header {
+        margin-bottom: 2rem;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="login-container">
-    <div class="login-header">
-      <h1>RiskSheet Login</h1>
+  <div class="login-wrapper">
+    <div class="login-container">
+      <div class="login-header">
+        <div class="logo">📊</div>
+        <h1>RiskSheet</h1>
+        <p>Locked Google Sheets–style tracker</p>
+      </div>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <div class="input-wrapper">
+            <input 
+              type="text" 
+              id="username" 
+              placeholder="Enter your username"
+              required 
+              autocomplete="username"
+              aria-label="Username"
+            >
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="input-wrapper">
+            <input 
+              type="password" 
+              id="password" 
+              placeholder="Enter your password"
+              required 
+              autocomplete="current-password"
+              aria-label="Password"
+            >
+            <button 
+              type="button" 
+              class="password-toggle" 
+              id="passwordToggle"
+              aria-label="Toggle password visibility"
+              title="Toggle password visibility"
+            >
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="login-btn" id="loginBtn">
+          <span class="button-content">
+            <span id="btnText">Sign In</span>
+          </span>
+        </button>
+
+        <div id="errorMsg" class="error-msg" role="alert"></div>
+        <div id="successMsg" class="success-msg" role="status"></div>
+      </form>
     </div>
-    <form id="loginForm">
-      <div class="form-group">
-        <label for="username">Username</label>
-        <input type="text" id="username" required autocomplete="username">
-      </div>
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" required autocomplete="current-password">
-      </div>
-      <button type="submit" class="login-btn">Sign In</button>
-      <div id="errorMsg" class="error-msg">Invalid username or password</div>
-    </form>
   </div>
 
   <script>
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    const loginForm = document.getElementById('loginForm');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const passwordToggle = document.getElementById('passwordToggle');
+    const loginBtn = document.getElementById('loginBtn');
+    const btnText = document.getElementById('btnText');
+    const errorMsg = document.getElementById('errorMsg');
+    const successMsg = document.getElementById('successMsg');
+
+    // Password visibility toggle
+    passwordToggle.addEventListener('click', (e) => {
       e.preventDefault();
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-      const errorMsg = document.getElementById('errorMsg');
+      const isPassword = passwordInput.type === 'password';
+      passwordInput.type = isPassword ? 'text' : 'password';
+      passwordToggle.textContent = isPassword ? '🙈' : '👁️';
+    });
+
+    // Clear error message when user starts typing
+    [usernameInput, passwordInput].forEach(input => {
+      input.addEventListener('input', () => {
+        errorMsg.classList.remove('show');
+        errorMsg.textContent = '';
+      });
+    });
+
+    // Form submission
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value;
+
+      // Validation
+      if (!username) {
+        showError('Please enter your username');
+        return;
+      }
+      if (!password) {
+        showError('Please enter your password');
+        return;
+      }
+
+      // Set loading state
+      setLoadingState(true);
 
       try {
         const res = await fetch('/api/login', {
@@ -104,15 +386,41 @@
         });
 
         if (res.ok) {
-          window.location.href = '/';
+          showSuccess('Login successful! Redirecting...');
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 500);
         } else {
-          errorMsg.style.display = 'block';
+          const data = await res.json().catch(() => ({}));
+          showError(data.message || 'Invalid username or password');
+          setLoadingState(false);
         }
       } catch (err) {
-        errorMsg.textContent = 'An error occurred. Please try again.';
-        errorMsg.style.display = 'block';
+        showError('Connection error. Please try again.');
+        setLoadingState(false);
       }
     });
+
+    function showError(message) {
+      errorMsg.textContent = message;
+      errorMsg.classList.add('show');
+      successMsg.classList.remove('show');
+    }
+
+    function showSuccess(message) {
+      successMsg.textContent = message;
+      successMsg.classList.add('show');
+      errorMsg.classList.remove('show');
+    }
+
+    function setLoadingState(isLoading) {
+      loginBtn.disabled = isLoading;
+      if (isLoading) {
+        btnText.innerHTML = '<span class="spinner"></span>Signing in...';
+      } else {
+        btnText.textContent = 'Sign In';
+      }
+    }
   </script>
 </body>
 </html>
