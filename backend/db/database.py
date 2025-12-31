@@ -4,9 +4,35 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# On Vercel (or read-only environments), use /tmp for SQLite
+# Determine database path
+# On Vercel, check if we have a persistent location (project root writable area)
 if os.environ.get("VERCEL"):
-    DB_PATH = Path("/tmp") / "risksheet.db"
+    # Try multiple Vercel persistent paths
+    possible_paths = [
+        Path("/tmp") / "risksheet.db",  # /tmp on Vercel
+        Path.home() / ".cache" / "risksheet.db",  # User home
+        BASE_DIR / "risksheet.db",  # Original location
+    ]
+    
+    DB_PATH = None
+    for path in possible_paths:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Test write access
+            test_file = path.parent / ".write_test"
+            test_file.touch()
+            test_file.unlink()
+            DB_PATH = path
+            print(f"Using database at: {DB_PATH}")
+            break
+        except Exception as e:
+            print(f"Cannot write to {path}: {e}")
+            continue
+    
+    if DB_PATH is None:
+        # Fallback to /tmp
+        DB_PATH = Path("/tmp") / "risksheet.db"
+        print(f"Using fallback database at: {DB_PATH}")
 else:
     DB_PATH = BASE_DIR / "risksheet.db"
 
