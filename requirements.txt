@@ -5,4 +5,5 @@ pandas==2.2.2
 yfinance>=0.2.66
 python-multipart
 itsdangerous
-websockets>=12.0psycopg2-binary==2.9.9
+websockets>=12.0
+psycopg2-binary==2.9.9
