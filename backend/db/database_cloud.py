@@ -12,11 +12,19 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 IS_VERCEL = os.getenv("VERCEL") is not None
 
+# Try to use PostgreSQL, fall back to SQLite if not available
+USE_POSTGRES = False
+
 if IS_VERCEL and (SUPABASE_URL and SUPABASE_KEY):
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        USE_POSTGRES = True
+    except ImportError:
+        print("psycopg2 not available, falling back to SQLite")
+
+if USE_POSTGRES:
     # Use PostgreSQL via Supabase
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    
     def get_connection():
         conn = psycopg2.connect(
             host=SUPABASE_URL.replace("https://", "").split(".supabase.co")[0] + ".supabase.co",
