@@ -1,4 +1,4 @@
-const EDITABLE_COLS = ["ticker", "shares", "price_bought"];
+const EDITABLE_COLS = ["ticker", "shares", "price_bought", "date_bought"];
 const STORAGE_DB = "riskSheet";
 const STORAGE_STORE = "rows";
 
@@ -115,7 +115,7 @@ function rowNumberRenderer(instance, td, row, col, prop, value, cellProperties) 
 
 const columns = [
   { data: "__row", readOnly: true, renderer: rowNumberRenderer },
-  { data: "date_bought", type: "date", dateFormat: "YYYY-MM-DD", correctFormat: true, readOnly: true },
+  { data: "date_bought", type: "date", dateFormat: "YYYY-MM-DD", correctFormat: true },
   { data: "sector", type: "text", readOnly: true },
   { data: "ticker", type: "text" },
   { 
@@ -286,13 +286,6 @@ const hot = new Handsontable(sheetEl, {
       const [row, col] = selected[0];
       const prop = hot.colToProp(col);
       
-      // If on price_bought column, show message
-      if (prop === 'price_bought') {
-        alert('⚠️ Price is read-only. Click to verify before confirming.');
-        event.preventDefault();
-        return;
-      }
-      
       // If on current_price or position_value, prevent edit
       if (prop === 'current_price' || prop === 'position_value') {
         alert('⚠️ This column is read-only and updates automatically.');
@@ -301,8 +294,7 @@ const hot = new Handsontable(sheetEl, {
       }
       
       // Navigate to next editable column on Enter
-      const editableCols = ['ticker', 'shares', 'price_bought'];
-      const colIndex = hot.propToCol(prop);
+      const editableCols = ['ticker', 'shares', 'price_bought', 'date_bought'];
       const currentColIndex = editableCols.indexOf(prop);
       
       if (currentColIndex !== -1 && currentColIndex < editableCols.length - 1) {
