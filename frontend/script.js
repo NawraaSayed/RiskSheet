@@ -4,100 +4,86 @@ const STORAGE_STORE = "rows";
 
 // ============ Real-Time Sync Setup with Polling (Vercel Compatible) ============
 let lastSyncTimestamp = 0;
-const SYNC_INTERVAL = 4000; // Check for updates every 4 seconds (reduced polling frequency)
+const SYNC_INTERVAL_ROW_COUNT = 5000; // Check for added/deleted rows every 5 seconds
+const SYNC_INTERVAL_PRICES = 60000; // Update prices/ATR every 1 minute (60 seconds)
 let isUserEditing = false; // Flag to pause polling while user edits
+let lastKnownRowCount = 0; // Track row count to detect additions/deletions
 
 function initRealtimeSync() {
   console.log("Initializing real-time sync with smart polling (Vercel compatible)");
   
-  // Start polling for position updates (SMART UPDATE - only changed cells)
+  // Poll for row count changes only (detect add/delete) - every 5 seconds
   setInterval(async () => {
     if (isUserEditing) return; // Skip polling while user is editing
     
     try {
       const fresh = await loadFromBackend();
-      const current = hot.getSourceData().filter(r => r && r.ticker);
-      const currentCount = current.length;
       const freshCount = fresh.length;
       
-      // If count changed, need to reload table
-      if (freshCount !== currentCount) {
-        console.log(`[Sync] Position count changed: ${currentCount} → ${freshCount}, reloading...`);
+      // Only reload if row count changed (user added/deleted)
+      if (freshCount !== lastKnownRowCount) {
+        console.log(`[Sync] Row count changed: ${lastKnownRowCount} → ${freshCount}`);
+        lastKnownRowCount = freshCount;
+        
+        // Reload data but preserve user's order
         hot.loadData(fresh.map((r, idx) => ({ __row: idx + 1, ...r })), { source: 'loadData' });
         updateRowNumbers();
         recalc();
-      } else if (freshCount > 0) {
-        // Smart update: only update cells that actually changed
-        let needsRecalc = false;
-        for (let i = 0; i < freshCount; i++) {
-          const currentRow = current[i];
-          const freshRow = fresh[i];
-          if (!currentRow || !freshRow) continue;
-          
-          // Check each column for changes
-          const fieldsToCheck = ['ticker', 'shares', 'price_bought', 'date_bought', 'sector', 'current_price', 'position_value'];
-          for (const field of fieldsToCheck) {
-            const currentVal = currentRow[field];
-            const freshVal = freshRow[field];
-            
-            // Update only if changed
-            if (currentVal !== freshVal) {
-              hot.setDataAtCell(i, hot.propToCol(field), freshVal, 'syncData');
-              needsRecalc = true;
-            }
-          }
+      }
+    } catch (e) {
+      console.error("[Sync] Row count polling error:", e);
+    }
+  }, SYNC_INTERVAL_ROW_COUNT);
+  
+  // Poll for price updates ONLY - every 1 minute (60 seconds)
+  // Only update current_price and position_value columns
+  setInterval(async () => {
+    if (isUserEditing) return; // Skip polling while user is editing
+    
+    try {
+      const fresh = await loadFromBackend();
+      const current = hot.getSourceData();
+      
+      // Only update price and position_value for existing rows
+      // Do NOT update any other fields (ticker, shares, price_bought, date_bought, sector)
+      for (let i = 0; i < Math.min(current.length, fresh.length); i++) {
+        const currentRow = current[i];
+        const freshRow = fresh[i];
+        
+        if (!currentRow || !freshRow || !currentRow.ticker) continue;
+        
+        // Only update these two columns: current_price and position_value
+        const currentPrice = currentRow.current_price;
+        const freshPrice = freshRow.current_price;
+        const currentValue = currentRow.position_value;
+        const freshValue = freshRow.position_value;
+        
+        if (currentPrice !== freshPrice) {
+          const colIdx = hot.propToCol('current_price');
+          hot.setDataAtCell(i, colIdx, freshPrice, 'priceUpdate');
         }
         
-        if (needsRecalc) {
-          console.log(`[Sync] Some position values updated via smart update`);
-          recalc();
+        if (currentValue !== freshValue) {
+          const colIdx = hot.propToCol('position_value');
+          hot.setDataAtCell(i, colIdx, freshValue, 'priceUpdate');
         }
       }
     } catch (e) {
-      console.error("[Sync] Polling error:", e);
+      console.error("[Sync] Price polling error:", e);
     }
-  }, SYNC_INTERVAL);
-  
-  // Sync cash periodically (only update if changed)
-  setInterval(async () => {
-    if (isUserEditing) return; // Skip polling while user is editing
-    
-    try {
-      const freshCash = await loadCashValue();
-      if (freshCash !== cachedCash) {
-        console.log(`[Sync] Cash changed: ${cachedCash} → ${freshCash}`);
-        cachedCash = freshCash;
-        updatePortfolioSummary();
-        // Don't trigger full recalc on cash change alone
-      }
-    } catch (e) {
-      console.error("[Sync] Cash polling error:", e);
-    }
-  }, SYNC_INTERVAL + 500);
-  
-  // Sync sector allocations (only update if changed)
-  setInterval(async () => {
-    if (isUserEditing) return; // Skip polling while user is editing
-    
-    try {
-      const freshAllocations = await loadSectorAllocations();
-      const freshStr = JSON.stringify(freshAllocations);
-      const cachedStr = JSON.stringify(cachedAllocations);
-      
-      if (freshStr !== cachedStr) {
-        console.log(`[Sync] Sector allocations changed, updating...`);
-        cachedAllocations = freshAllocations;
-        updateSectorTable();
-      }
-    } catch (e) {
-      console.error("[Sync] Allocation polling error:", e);
-    }
-  }, SYNC_INTERVAL + 1000);
+  }, SYNC_INTERVAL_PRICES);
 }
 
 // Initialize polling when the page loads
 window.addEventListener('load', () => {
-  setTimeout(initRealtimeSync, 500);
+  setTimeout(() => {
+    // Set initial row count from current data
+    const currentData = hot.getSourceData().filter(r => r && r.ticker);
+    lastKnownRowCount = currentData.length;
+    console.log(`[Init] Setting initial row count: ${lastKnownRowCount}`);
+    
+    initRealtimeSync();
+  }, 500);
 });
 // ============ End Real-Time Sync Setup ============
 
@@ -243,7 +229,7 @@ const hot = new Handsontable(sheetEl, {
     setTimeout(() => { isUserEditing = false; }, 500);
   },
   afterChange: (changes, source) => {
-    if (!changes || source === "loadData" || source === "syncData") return;
+    if (!changes || source === "loadData" || source === "syncData" || source === "priceUpdate") return;
     
     // Save individual position changes to Supabase
     savePositionChanges(changes);
