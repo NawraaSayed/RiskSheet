@@ -1,5 +1,6 @@
 """
 Centralized Supabase PostgreSQL client with environment validation
+Falls back gracefully if credentials are missing
 """
 import os
 import psycopg2
@@ -19,11 +20,94 @@ if not SUPABASE_PASSWORD:
     MISSING_VARS.append("SUPABASE_PASSWORD")
 
 if MISSING_VARS:
-    print(f"❌ FATAL: Missing Supabase environment variables: {', '.join(MISSING_VARS)}")
-    print("Please set these in your Vercel environment: SUPABASE_HOST, SUPABASE_PASSWORD")
-    raise EnvironmentError(f"Missing Supabase config: {', '.join(MISSING_VARS)}")
+    print(f"⚠️ Supabase not configured: {', '.join(MISSING_VARS)}")
+    print("ℹ️ To enable Supabase, add these to Vercel environment variables:")
+    print("   SUPABASE_HOST=<your-project>.supabase.co")
+    print("   SUPABASE_PASSWORD=<your-password>")
+    SUPABASE_ENABLED = False
+else:
+    print(f"✅ Supabase client configured for {SUPABASE_HOST}")
+    SUPABASE_ENABLED = True
 
-print(f"✅ Supabase client configured for {SUPABASE_HOST}")
+
+class SupabaseClient:
+    """Thread-safe Supabase PostgreSQL client"""
+    
+    @staticmethod
+    def get_connection():
+        """
+        Get a new connection to Supabase PostgreSQL.
+        Raises: psycopg2.Error if connection fails
+        """
+        if not SUPABASE_ENABLED:
+            raise Exception("Supabase not configured - environment variables missing")
+        
+        try:
+            conn = psycopg2.connect(
+                host=SUPABASE_HOST,
+                user=SUPABASE_USER,
+                password=SUPABASE_PASSWORD,
+                database=SUPABASE_DB,
+                port=5432,
+                sslmode="require",
+                connect_timeout=10
+            )
+            return conn
+        except psycopg2.OperationalError as e:
+            print(f"❌ Supabase connection failed: {e}")
+            raise
+        except Exception as e:
+            print(f"❌ Unexpected error connecting to Supabase: {e}")
+            raise
+
+    @staticmethod
+    def execute_query(query: str, params: tuple = ()) -> list:
+        """
+        Execute a SELECT query and return results
+        Args:
+            query: SQL query string
+            params: Query parameters tuple
+        Returns:
+            List of dicts (rows)
+        Raises:
+            psycopg2.Error if query fails
+        """
+        conn = SupabaseClient.get_connection()
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(query, params)
+            result = [dict(row) for row in cur.fetchall()]
+            cur.close()
+            return result
+        finally:
+            conn.close()
+
+    @staticmethod
+    def execute_update(query: str, params: tuple = ()) -> int:
+        """
+        Execute an INSERT/UPDATE/DELETE query
+        Args:
+            query: SQL query string
+            params: Query parameters tuple
+        Returns:
+            Number of rows affected
+        Raises:
+            psycopg2.Error if query fails
+        """
+        conn = SupabaseClient.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(query, params)
+            affected = cur.rowcount
+            conn.commit()
+            cur.close()
+            return affected
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ Database update failed: {e}")
+            raise
+        finally:
+            conn.close()
 
 
 class SupabaseClient:
