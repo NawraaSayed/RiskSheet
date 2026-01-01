@@ -247,13 +247,26 @@ const hot = new Handsontable(sheetEl, {
     setTimeout(() => { isUserEditing = false; }, 500);
   },
   afterChange: (changes, source) => {
-    if (!changes || source === "loadData" || source === "syncData" || source === "priceUpdate" || source === "recalcUpdate") return;
+    if (!changes || source === "loadData" || source === "syncData" || source === "priceUpdate" || source === "recalcUpdate" || source === "tickerUpdate") return;
+    
+    // Check if ticker was just entered
+    let tickerJustEntered = false;
+    for (const [row, prop, oldVal, newVal] of changes) {
+      if (prop === 'ticker' && newVal && !oldVal) {
+        tickerJustEntered = true;
+        // Fetch ticker data immediately (current price, market cap, sector)
+        fetchTickerData(row, newVal);
+        break;
+      }
+    }
     
     // Save individual position changes to Supabase
     savePositionChanges(changes);
     
-    // Trigger recalculation for UI updates
-    debounceRecalc();
+    // Trigger recalculation for UI updates (only if not just entering ticker)
+    if (!tickerJustEntered) {
+      debounceRecalc();
+    }
   },
   beforeChange: (changes, source) => {
     if (!changes) return;
@@ -1179,6 +1192,59 @@ async function savePosition(row) {
     }
   } catch (e) { console.error("Save failed:", e); }
   return null;
+}
+
+async function fetchTickerData(rowIndex, ticker) {
+  /**
+   * Fetch ticker-only data (current price, market cap, sector)
+   * Called immediately when user enters a ticker
+   * Does NOT require shares or price_bought
+   */
+  if (!ticker) return;
+  
+  try {
+    console.log(`[TickerData] Fetching data for ${ticker}`);
+    
+    // Call recalculate with just the ticker (shares=0, price_bought=0)
+    const res = await fetch('/recalculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rows: [{
+          ticker: ticker.toUpperCase(),
+          shares: 0,
+          price_bought: 0
+        }]
+      })
+    });
+    
+    if (!res.ok) {
+      console.warn(`Failed to fetch ticker data for ${ticker}`);
+      return;
+    }
+    
+    const data = await res.json();
+    if (!data.rows || data.rows.length === 0) return;
+    
+    const tickerData = data.rows[0];
+    
+    // Update only the fields that don't require shares/price_bought:
+    // sector, current_price, market_cap, cap_formatted
+    const fieldsToUpdate = ['sector', 'current_price', 'market_cap', 'cap_formatted'];
+    
+    for (const field of fieldsToUpdate) {
+      if (field in tickerData && tickerData[field] !== undefined) {
+        const colIdx = hot.propToCol(field);
+        if (colIdx >= 0) {
+          hot.setDataAtCell(rowIndex, colIdx, tickerData[field], 'tickerUpdate');
+        }
+      }
+    }
+    
+    console.log(`[TickerData] Updated ${ticker}: sector=${tickerData.sector}, price=${tickerData.current_price}, market_cap=${tickerData.market_cap}`);
+  } catch (e) {
+    console.error(`[TickerData] Failed to fetch data for ${ticker}:`, e);
+  }
 }
 
 async function deletePosition(ticker) {
