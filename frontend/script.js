@@ -260,6 +260,42 @@ const hot = new Handsontable(sheetEl, {
       }
     });
   },
+  beforeKeyDown: (event) => {
+    // Handle Enter key for navigation
+    if (event.key === 'Enter') {
+      const selected = hot.getSelected();
+      if (!selected || selected.length === 0) return;
+      
+      const [row, col] = selected[0];
+      const prop = hot.colToProp(col);
+      
+      // If on price_bought column, show message
+      if (prop === 'price_bought') {
+        alert('⚠️ Price is read-only. Click to verify before confirming.');
+        event.preventDefault();
+        return;
+      }
+      
+      // If on current_price or position_value, prevent edit
+      if (prop === 'current_price' || prop === 'position_value') {
+        alert('⚠️ This column is read-only and updates automatically.');
+        event.preventDefault();
+        return;
+      }
+      
+      // Navigate to next editable column on Enter
+      const editableCols = ['ticker', 'shares', 'price_bought'];
+      const colIndex = hot.propToCol(prop);
+      const currentColIndex = editableCols.indexOf(prop);
+      
+      if (currentColIndex !== -1 && currentColIndex < editableCols.length - 1) {
+        const nextProp = editableCols[currentColIndex + 1];
+        const nextCol = hot.propToCol(nextProp);
+        hot.selectCell(row, nextCol);
+        event.preventDefault();
+      }
+    }
+  },
 });
 
 const hot2 = new Handsontable(sheet2El, {
@@ -596,48 +632,41 @@ async function recalc() {
         cachedMarketWeights = data.market_sector_weights;
     }
 
-    // IMPORTANT: Keep original row order - build a map of ticker to response data
-    const responseMap = {};
-    if (data.rows) {
-      data.rows.forEach(r => {
-        if (r.ticker) {
-          responseMap[r.ticker] = r;
-        }
-      });
-    }
-
+    // IMPORTANT: Keep original row order - the backend returns rows in same order as we sent
+    // So we should match by index, not by ticker
     const currentData = hot.getSourceData();
     let needsFullReload = false;
 
-    // Update each row in place, preserving order
-    for (let i = 0; i < currentData.length; i++) {
-      const currentRow = currentData[i];
-      if (!currentRow || !currentRow.ticker) continue;
+    // Update each row in place, preserving order - match by index, not ticker
+    if (data.rows && data.rows.length > 0) {
+      for (let i = 0; i < currentData.length && i < data.rows.length; i++) {
+        const currentRow = currentData[i];
+        const responseRow = data.rows[i];
+        
+        if (!currentRow) continue;
+        
+        // Skip empty rows (no ticker)
+        if (!currentRow.ticker) continue;
+        
+        if (!responseRow) continue;
 
-      const responseRow = responseMap[currentRow.ticker];
-      if (!responseRow) {
-        // Ticker not in response, mark as error
-        needsFullReload = true;
-        break;
-      }
+        // Update individual cells in place (not reloading entire table)
+        const fields = ['current_price', 'position_value', 'atr', 'atr_change', 'pct_change', 
+                        'beta', 'weight', 'beta_weighted', 'expected_return', 'weighted_expected_return', 
+                        'var', 'iv', 'holding_period', 'market_cap', 'cap_formatted', 'sector'];
 
-      // Restore the raw shares value
-      const originalShare = currentRow.shares;
-
-      // Update individual cells in place (not reloading entire table)
-      const fields = ['current_price', 'position_value', 'atr', 'atr_change', 'pct_change', 
-                      'beta', 'weight', 'beta_weighted', 'expected_return', 'weighted_expected_return', 
-                      'var', 'iv', 'holding_period', 'market_cap', 'cap_formatted', 'sector'];
-
-      for (const field of fields) {
-        const newVal = responseRow[field] || (responseRow.error ? "Err" : "");
-        if (currentRow[field] !== newVal) {
-          const colIdx = hot.propToCol(field);
-          if (colIdx >= 0) {
-            hot.setDataAtCell(i, colIdx, newVal, 'recalcUpdate');
+        for (const field of fields) {
+          const newVal = responseRow[field] || (responseRow.error ? "Err" : "");
+          if (currentRow[field] !== newVal) {
+            const colIdx = hot.propToCol(field);
+            if (colIdx >= 0) {
+              hot.setDataAtCell(i, colIdx, newVal, 'recalcUpdate');
+            }
           }
         }
       }
+    } else {
+      needsFullReload = true;
     }
 
     // Only call these if data structure didn't change
