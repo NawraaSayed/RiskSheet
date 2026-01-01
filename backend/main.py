@@ -15,18 +15,34 @@ if os.environ.get("VERCEL"):
     except Exception as e:
         print(f"Failed to create yfinance cache dir: {e}")
 
-# Use the regular database module
-from backend.db.database import (
-    init_db,
-    get_all_positions,
-    insert_position,
-    delete_position,
-    get_cash,
-    update_cash,
-    get_sector_allocations,
-    upsert_sector_allocation,
-    delete_sector_allocation
-)
+# Use cloud database for Vercel, fall back to SQLite locally
+try:
+    from backend.db.database_cloud import (
+        init_db,
+        get_all_positions,
+        insert_position,
+        delete_position,
+        get_cash,
+        update_cash,
+        get_sector_allocations,
+        upsert_sector_allocation,
+        delete_sector_allocation
+    )
+    print("✅ Using Supabase PostgreSQL database")
+except Exception as e:
+    print(f"⚠️ Supabase not available ({e}), falling back to SQLite")
+    from backend.db.database import (
+        init_db,
+        get_all_positions,
+        insert_position,
+        delete_position,
+        get_cash,
+        update_cash,
+        get_sector_allocations,
+        upsert_sector_allocation,
+        delete_sector_allocation
+    )
+    print("✅ Using SQLite database")
 
 
 import numpy as np
