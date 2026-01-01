@@ -41,31 +41,45 @@ function initRealtimeSync() {
     if (isUserEditing) return; // Skip polling while user is editing
     
     try {
-      const fresh = await loadFromBackend();
-      const current = hot.getSourceData();
+      // Fetch fresh prices by calling recalculate endpoint
+      const res = await fetch('/recalculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rows: hot.getSourceData()
+            .filter(r => r && r.ticker)
+            .map(r => ({
+              ticker: r.ticker,
+              shares: r.shares,
+              price_bought: r.price_bought
+            }))
+        })
+      });
       
-      // Only update price and position_value for existing rows
-      // Do NOT update any other fields (ticker, shares, price_bought, date_bought, sector)
-      for (let i = 0; i < Math.min(current.length, fresh.length); i++) {
-        const currentRow = current[i];
-        const freshRow = fresh[i];
-        
-        if (!currentRow || !freshRow || !currentRow.ticker) continue;
-        
-        // Only update these two columns: current_price and position_value
-        const currentPrice = currentRow.current_price;
-        const freshPrice = freshRow.current_price;
-        const currentValue = currentRow.position_value;
-        const freshValue = freshRow.position_value;
-        
-        if (currentPrice !== freshPrice) {
-          const colIdx = hot.propToCol('current_price');
-          hot.setDataAtCell(i, colIdx, freshPrice, 'priceUpdate');
-        }
-        
-        if (currentValue !== freshValue) {
-          const colIdx = hot.propToCol('position_value');
-          hot.setDataAtCell(i, colIdx, freshValue, 'priceUpdate');
+      if (!res.ok) return;
+      
+      const freshData = await res.json();
+      const currentData = hot.getSourceData();
+      
+      // Update ONLY current_price and position_value for each row
+      if (freshData.rows) {
+        for (let i = 0; i < Math.min(currentData.length, freshData.rows.length); i++) {
+          const currentRow = currentData[i];
+          const freshRow = freshData.rows[i];
+          
+          if (!currentRow || !freshRow || !currentRow.ticker) continue;
+          
+          // Update current_price if changed
+          if (currentRow.current_price !== freshRow.current_price) {
+            const colIdx = hot.propToCol('current_price');
+            hot.setDataAtCell(i, colIdx, freshRow.current_price, 'priceUpdate');
+          }
+          
+          // Update position_value if changed
+          if (currentRow.position_value !== freshRow.position_value) {
+            const colIdx = hot.propToCol('position_value');
+            hot.setDataAtCell(i, colIdx, freshRow.position_value, 'priceUpdate');
+          }
         }
       }
     } catch (e) {
@@ -229,7 +243,7 @@ const hot = new Handsontable(sheetEl, {
     setTimeout(() => { isUserEditing = false; }, 500);
   },
   afterChange: (changes, source) => {
-    if (!changes || source === "loadData" || source === "syncData" || source === "priceUpdate") return;
+    if (!changes || source === "loadData" || source === "syncData" || source === "priceUpdate" || source === "recalcUpdate") return;
     
     // Save individual position changes to Supabase
     savePositionChanges(changes);
@@ -582,79 +596,119 @@ async function recalc() {
         cachedMarketWeights = data.market_sector_weights;
     }
 
-    const merged = data.rows.map((r, idx) => {
-      // Restore the raw shares value from UI so it doesn't get overwritten by the floored value
-      const originalShare = rawRows[idx] ? rawRows[idx].shares : r.shares;
-      
-      if (r.error) {
-        return {
-          __row: idx + 1,
-          ...r,
-          shares: originalShare, // Keep user input
-          current_price: "Err",
-          position_value: "Err",
-          atr: "Err",
-          atr_change: "Err",
-          pct_change: "Err",
-          beta: "Err",
-          weight: "Err",
-          beta_weighted: "Err",
-          expected_return: "Err",
-          weighted_expected_return: "Err",
-          var: "Err",
-          iv: "Err",
-          holding_period: "Err",
-          market_cap: "Err",
-          cap_formatted: "Err",
-          sector: "", 
-        };
-      }
-      return { 
-        __row: idx + 1, 
-        ...r,
-        shares: originalShare // Keep user input
-      };
-    });
-    hot.loadData(merged);
-    updateRowNumbers();
-    updateTable2();
-    updatePortfolioSummary();
-    updateSectorTable();
-    
-    // Calculate and save sector allocations to Supabase
-    const rows = merged.filter(r => r && r.ticker && !r.error);
-    const totalPortfolioValue = rows.reduce((sum, r) => sum + (Number(r.position_value) || 0), 0);
-    
-    if (totalPortfolioValue > 0) {
-      // Calculate current sector weights from the portfolio
-      const sectorWeights = {};
-      rows.forEach(r => {
-        if (r.sector && r.sector.trim()) {
-          const s = r.sector.trim();
-          sectorWeights[s] = (sectorWeights[s] || 0) + (Number(r.position_value) || 0) / totalPortfolioValue;
+    // IMPORTANT: Keep original row order - build a map of ticker to response data
+    const responseMap = {};
+    if (data.rows) {
+      data.rows.forEach(r => {
+        if (r.ticker) {
+          responseMap[r.ticker] = r;
         }
       });
+    }
+
+    const currentData = hot.getSourceData();
+    let needsFullReload = false;
+
+    // Update each row in place, preserving order
+    for (let i = 0; i < currentData.length; i++) {
+      const currentRow = currentData[i];
+      if (!currentRow || !currentRow.ticker) continue;
+
+      const responseRow = responseMap[currentRow.ticker];
+      if (!responseRow) {
+        // Ticker not in response, mark as error
+        needsFullReload = true;
+        break;
+      }
+
+      // Restore the raw shares value
+      const originalShare = currentRow.shares;
+
+      // Update individual cells in place (not reloading entire table)
+      const fields = ['current_price', 'position_value', 'atr', 'atr_change', 'pct_change', 
+                      'beta', 'weight', 'beta_weighted', 'expected_return', 'weighted_expected_return', 
+                      'var', 'iv', 'holding_period', 'market_cap', 'cap_formatted', 'sector'];
+
+      for (const field of fields) {
+        const newVal = responseRow[field] || (responseRow.error ? "Err" : "");
+        if (currentRow[field] !== newVal) {
+          const colIdx = hot.propToCol(field);
+          if (colIdx >= 0) {
+            hot.setDataAtCell(i, colIdx, newVal, 'recalcUpdate');
+          }
+        }
+      }
+    }
+
+    // Only call these if data structure didn't change
+    if (!needsFullReload) {
+      updateTable2();
+      updatePortfolioSummary();
+      updateSectorTable();
       
-      // Update cachedAllocations with calculated weights and persist to Supabase
-      for (const [sector, weight] of Object.entries(sectorWeights)) {
-        cachedAllocations[sector] = Math.round(weight * 100) / 100; // Round to 2 decimals
+      // Calculate and save sector allocations to Supabase
+      const rows = hot.getSourceData().filter(r => r && r.ticker);
+      const totalPortfolioValue = rows.reduce((sum, r) => sum + (Number(r.position_value) || 0), 0);
+      
+      if (totalPortfolioValue > 0) {
+        // Calculate current sector weights from the portfolio
+        const sectorWeights = {};
+        rows.forEach(r => {
+          if (r.sector && r.sector.trim()) {
+            const s = r.sector.trim();
+            sectorWeights[s] = (sectorWeights[s] || 0) + (Number(r.position_value) || 0) / totalPortfolioValue;
+          }
+        });
+        
+        // Update cachedAllocations with calculated weights and persist to Supabase
+        for (const [sector, weight] of Object.entries(sectorWeights)) {
+          cachedAllocations[sector] = Math.round(weight * 100) / 100; // Round to 2 decimals
+        }
+        
+        // Persist all sector allocations to Supabase
+        await saveSectorAllocations();
       }
       
-      // Persist all sector allocations to Supabase
-      await saveSectorAllocations();
+      // Re-validate and apply backend errors
+      hot.validateCells(() => {
+        const tickerCol = hot.propToCol('ticker');
+        for (let i = 0; i < currentData.length; i++) {
+          const row = currentData[i];
+          if (row && row.error) {
+            hot.setCellMeta(i, tickerCol, 'valid', false);
+            hot.setCellMeta(i, tickerCol, 'comment', { value: row.error });
+          }
+        }
+      });
+    } else {
+      // If row count changed, do full reload
+      const merged = data.rows.map((r, idx) => {
+        const originalShare = rawRows[idx] ? rawRows[idx].shares : r.shares;
+        
+        if (r.error) {
+          return {
+            __row: idx + 1,
+            ...r,
+            shares: originalShare,
+            current_price: "Err",
+            position_value: "Err",
+            sector: "", 
+          };
+        }
+        return { 
+          __row: idx + 1, 
+          ...r,
+          shares: originalShare
+        };
+      });
+      hot.loadData(merged);
+      updateRowNumbers();
+      updateTable2();
+      updatePortfolioSummary();
+      updateSectorTable();
     }
     
-    // Re-validate and apply backend errors
-    hot.validateCells(() => {
-      const tickerCol = hot.propToCol('ticker');
-      merged.forEach((row, idx) => {
-        if (row.error) {
-          hot.setCellMeta(idx, tickerCol, 'valid', false);
-          hot.setCellMeta(idx, tickerCol, 'comment', { value: row.error });
-        }
-      });
-      hot.render();
-    });
+    hot.render();
   } catch (err) {
     console.error(err);
     const rows = rawRows.map((r, idx) => ({
