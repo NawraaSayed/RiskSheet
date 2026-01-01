@@ -669,8 +669,10 @@ async function recalc() {
 
         // Update ALL fields from response (soft update - only if changed)
         // Get all possible field names from the response
+        // BUT: Never update user-input fields (ticker, shares, price_bought, date_bought)
+        const userInputFields = ['ticker', 'shares', 'price_bought', 'date_bought', '__row'];
         const fieldsToUpdate = Object.keys(responseRow).filter(field => 
-          field !== 'ticker' && field !== 'shares' && field !== 'price_bought' && field !== 'date_bought'
+          !userInputFields.includes(field)
         );
 
         for (const field of fieldsToUpdate) {
@@ -807,7 +809,9 @@ function debounceRecalc() {
 }
 
 document.getElementById("addRow").addEventListener("click", () => {
-  hot.alter("insert_row_above", hot.countRows());
+  // Insert a new row at the bottom (after last row)
+  const lastRowIndex = hot.countRows() - 1;
+  hot.alter("insert_row_below", lastRowIndex);
   updateRowNumbers();
 });
 
