@@ -676,8 +676,13 @@ async function recalc() {
         for (const field of fieldsToUpdate) {
           const newVal = responseRow[field];
           
-          // Skip if field doesn't exist in current row or if values are the same
-          if (!(field in currentRow) || currentRow[field] === newVal) {
+          // Skip undefined values (don't overwrite existing data with undefined)
+          if (newVal === undefined || newVal === null) {
+            continue;
+          }
+          
+          // Skip if values are the same
+          if (currentRow[field] === newVal) {
             continue;
           }
           
