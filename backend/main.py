@@ -15,8 +15,8 @@ if os.environ.get("VERCEL"):
     except Exception as e:
         print(f"Failed to create yfinance cache dir: {e}")
 
-# Use database with /tmp support and automatic table creation
-from backend.db.database_cloud import (
+# Use Supabase PostgreSQL - single source of truth for all data
+from backend.db.database_supabase import (
     init_db,
     get_all_positions,
     insert_position,
@@ -28,12 +28,13 @@ from backend.db.database_cloud import (
     delete_sector_allocation
 )
 
-# Initialize database tables on startup
+# Initialize Supabase on startup
 try:
     init_db()
-    print("✅ Database initialized successfully")
+    print("✅ Supabase database ready")
 except Exception as e:
-    print(f"⚠️ Database initialization error: {e}")
+    print(f"❌ FATAL: Cannot initialize Supabase: {e}")
+    raise
 
 
 import numpy as np
@@ -223,32 +224,40 @@ async def create_position(pos: PositionIn):
         price_bought = float(pos.price_bought)
         # Convert empty string date to None
         date_bought = pos.date_bought if pos.date_bought else None
+        
+        # Insert into Supabase (single source of truth)
         insert_position(ticker, shares, price_bought, date_bought)
         
-        # Polling will detect the new position automatically
-        # No WebSocket broadcast needed - Vercel doesn't support WebSockets
-        
-        # Return the object with the cleaned date
+        # Return the object that was just saved
         return PositionDB(
             ticker=ticker,
             shares=shares,
             price_bought=price_bought,
             date_bought=date_bought
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error creating position: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Error creating position: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save position: {str(e)}")
 
 
 @app.delete("/positions/{ticker}", dependencies=[Depends(require_user)])
 async def delete_position_endpoint(ticker: str):
-    ticker = ticker.strip().upper()
-    delete_position(ticker)
-    
-    # Polling will detect the deletion automatically
-    # No WebSocket broadcast needed - Vercel doesn't support WebSockets
-    
-    return {"ok": True}
+    try:
+        ticker = ticker.strip().upper()
+        if not ticker:
+            raise HTTPException(status_code=400, detail="Ticker is required")
+        
+        # Delete from Supabase (single source of truth)
+        delete_position(ticker)
+        
+        return {"ok": True, "message": f"Position {ticker} deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error deleting position: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete position: {str(e)}")
 
 
 @app.websocket("/ws")
@@ -315,35 +324,52 @@ def read_cash():
 
 @app.put("/cash", response_model=CashUpdate, dependencies=[Depends(require_user)])
 async def update_cash_endpoint(cash: CashUpdate):
-    update_cash(cash.amount)
-    
-    # Broadcast the cash update to all connected clients
-    await manager.broadcast({
-        "type": "cash_updated",
-        "amount": cash.amount
-    })
-    
-    return cash
+    try:
+        # Update in Supabase (single source of truth)
+        update_cash(cash.amount)
+        
+        # Broadcast the cash update to all connected clients
+        await manager.broadcast({
+            "type": "cash_updated",
+            "amount": cash.amount
+        })
+        
+        return cash
+    except Exception as e:
+        print(f"❌ Error updating cash: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update cash: {str(e)}")
 
 
 @app.get("/sector-allocations", response_model=Dict[str, float], dependencies=[Depends(require_user)])
 def read_sector_allocations():
-    return get_sector_allocations()
+    try:
+        # Fetch from Supabase (single source of truth)
+        return get_sector_allocations()
+    except Exception as e:
+        print(f"❌ Error fetching sector allocations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch sector allocations: {str(e)}")
 
 
 @app.put("/sector-allocations", dependencies=[Depends(require_user)])
 async def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
-    if alloc.allocation == 0:
-        delete_sector_allocation(alloc.sector)
-    else:
-        upsert_sector_allocation(alloc.sector, alloc.allocation)
-    
-    # Broadcast the sector allocation update to all connected clients
-    await manager.broadcast({
-        "type": "sector_allocation_updated",
-        "sector": alloc.sector,
-        "allocation": alloc.allocation
-    })
+    try:
+        # Update in Supabase (single source of truth)
+        if alloc.allocation == 0:
+            delete_sector_allocation(alloc.sector)
+        else:
+            upsert_sector_allocation(alloc.sector, alloc.allocation)
+        
+        # Broadcast the sector allocation update to all connected clients
+        await manager.broadcast({
+            "type": "sector_allocation_updated",
+            "sector": alloc.sector,
+            "allocation": alloc.allocation
+        })
+        
+        return {"ok": True, "message": f"Sector {alloc.sector} allocation updated"}
+    except Exception as e:
+        print(f"❌ Error updating sector allocation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update sector allocation: {str(e)}")
     
     return {"ok": True}
 
