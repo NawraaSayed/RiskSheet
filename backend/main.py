@@ -15,44 +15,25 @@ if os.environ.get("VERCEL"):
     except Exception as e:
         print(f"Failed to create yfinance cache dir: {e}")
 
-# Use Supabase PostgreSQL for persistent data
+# Use database with /tmp support and automatic table creation
+from backend.db.database_cloud import (
+    init_db,
+    get_all_positions,
+    insert_position,
+    delete_position,
+    get_cash,
+    update_cash,
+    get_sector_allocations,
+    upsert_sector_allocation,
+    delete_sector_allocation
+)
+
+# Initialize database tables on startup
 try:
-    from backend.db.database_supabase import (
-        init_db,
-        get_all_positions,
-        insert_position,
-        delete_position,
-        get_cash,
-        update_cash,
-        get_sector_allocations,
-        upsert_sector_allocation,
-        delete_sector_allocation
-    )
-    print("✅ Using Supabase PostgreSQL database")
-    # Initialize database tables on startup
-    try:
-        init_db()
-    except Exception as e:
-        print(f"⚠️ Could not initialize database: {e}")
+    init_db()
+    print("✅ Database initialized successfully")
 except Exception as e:
-    print(f"⚠️ Supabase not available ({e}), falling back to SQLite")
-    from backend.db.database import (
-        init_db,
-        get_all_positions,
-        insert_position,
-        delete_position,
-        get_cash,
-        update_cash,
-        get_sector_allocations,
-        upsert_sector_allocation,
-        delete_sector_allocation
-    )
-    print("✅ Using SQLite database")
-    # Initialize database tables on startup
-    try:
-        init_db()
-    except Exception as e:
-        print(f"⚠️ Could not initialize database: {e}")
+    print(f"⚠️ Database initialization error: {e}")
 
 
 import numpy as np
