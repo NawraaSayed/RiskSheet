@@ -4,43 +4,52 @@ const STORAGE_STORE = "rows";
 
 // ============ Real-Time Sync Setup with Polling (Vercel Compatible) ============
 let lastSyncTimestamp = 0;
-const SYNC_INTERVAL = 2000; // Check for updates every 2 seconds
+const SYNC_INTERVAL = 4000; // Check for updates every 4 seconds (reduced polling frequency)
+let isUserEditing = false; // Flag to pause polling while user edits
 
 function initRealtimeSync() {
-  console.log("Initializing real-time sync with polling (Vercel compatible)");
+  console.log("Initializing real-time sync with smart polling (Vercel compatible)");
   
-  // Start polling for updates
+  // Start polling for position updates (SMART UPDATE - only changed cells)
   setInterval(async () => {
+    if (isUserEditing) return; // Skip polling while user is editing
+    
     try {
       const fresh = await loadFromBackend();
-      const currentCount = hot.getSourceData().filter(r => r && r.ticker).length;
+      const current = hot.getSourceData().filter(r => r && r.ticker);
+      const currentCount = current.length;
       const freshCount = fresh.length;
       
-      // If count changed, reload table and recalc
+      // If count changed, need to reload table
       if (freshCount !== currentCount) {
-        console.log(`[Sync] Position count changed: ${currentCount} → ${freshCount}`);
-        hot.loadData(fresh.map((r, idx) => ({ __row: idx + 1, ...r })));
+        console.log(`[Sync] Position count changed: ${currentCount} → ${freshCount}, reloading...`);
+        hot.loadData(fresh.map((r, idx) => ({ __row: idx + 1, ...r })), { source: 'loadData' });
         updateRowNumbers();
         recalc();
       } else if (freshCount > 0) {
-        // Check if any position data changed
-        let dataChanged = false;
-        for (let i = 0; i < Math.min(freshCount, currentCount); i++) {
-          const current = hot.getSourceDataAtRow(i);
+        // Smart update: only update cells that actually changed
+        let needsRecalc = false;
+        for (let i = 0; i < freshCount; i++) {
+          const currentRow = current[i];
           const freshRow = fresh[i];
-          if (current && freshRow && 
-              (current.ticker !== freshRow.ticker || 
-               current.shares !== freshRow.shares ||
-               current.price_bought !== freshRow.price_bought)) {
-            dataChanged = true;
-            break;
+          if (!currentRow || !freshRow) continue;
+          
+          // Check each column for changes
+          const fieldsToCheck = ['ticker', 'shares', 'price_bought', 'date_bought', 'sector', 'current_price', 'position_value'];
+          for (const field of fieldsToCheck) {
+            const currentVal = currentRow[field];
+            const freshVal = freshRow[field];
+            
+            // Update only if changed
+            if (currentVal !== freshVal) {
+              hot.setDataAtCell(i, hot.propToCol(field), freshVal, 'syncData');
+              needsRecalc = true;
+            }
           }
         }
         
-        if (dataChanged) {
-          console.log(`[Sync] Position data changed, reloading`);
-          hot.loadData(fresh.map((r, idx) => ({ __row: idx + 1, ...r })));
-          updateRowNumbers();
+        if (needsRecalc) {
+          console.log(`[Sync] Some position values updated via smart update`);
           recalc();
         }
       }
@@ -49,30 +58,36 @@ function initRealtimeSync() {
     }
   }, SYNC_INTERVAL);
   
-  // Also sync cash and allocations periodically
+  // Sync cash periodically (only update if changed)
   setInterval(async () => {
+    if (isUserEditing) return; // Skip polling while user is editing
+    
     try {
       const freshCash = await loadCashValue();
       if (freshCash !== cachedCash) {
         console.log(`[Sync] Cash changed: ${cachedCash} → ${freshCash}`);
         cachedCash = freshCash;
         updatePortfolioSummary();
-        recalc();
+        // Don't trigger full recalc on cash change alone
       }
     } catch (e) {
       console.error("[Sync] Cash polling error:", e);
     }
   }, SYNC_INTERVAL + 500);
   
-  // Sync sector allocations
+  // Sync sector allocations (only update if changed)
   setInterval(async () => {
+    if (isUserEditing) return; // Skip polling while user is editing
+    
     try {
       const freshAllocations = await loadSectorAllocations();
-      if (JSON.stringify(freshAllocations) !== JSON.stringify(cachedAllocations)) {
-        console.log(`[Sync] Sector allocations changed`);
+      const freshStr = JSON.stringify(freshAllocations);
+      const cachedStr = JSON.stringify(cachedAllocations);
+      
+      if (freshStr !== cachedStr) {
+        console.log(`[Sync] Sector allocations changed, updating...`);
         cachedAllocations = freshAllocations;
         updateSectorTable();
-        recalc();
       }
     } catch (e) {
       console.error("[Sync] Allocation polling error:", e);
@@ -219,8 +234,16 @@ const hot = new Handsontable(sheetEl, {
   },
   afterCreateRow: updateRowNumbers,
   afterRemoveRow: updateRowNumbers,
+  beforeEdit: () => {
+    // Pause polling while user is actively editing
+    isUserEditing = true;
+  },
+  afterEdit: () => {
+    // Resume polling after user finishes editing (with slight delay)
+    setTimeout(() => { isUserEditing = false; }, 500);
+  },
   afterChange: (changes, source) => {
-    if (!changes || source === "loadData") return;
+    if (!changes || source === "loadData" || source === "syncData") return;
     
     // Save individual position changes to Supabase
     savePositionChanges(changes);
@@ -287,6 +310,12 @@ const hot3 = new Handsontable(sheet3El, {
     }
     return { readOnly: true, className: "locked htCenter htMiddle" };
   },
+  beforeEdit: () => {
+    isUserEditing = true;
+  },
+  afterEdit: () => {
+    setTimeout(() => { isUserEditing = false; }, 500);
+  },
   afterChange: (changes, source) => {
     if (!changes || source === "loadData" || source === "updatePortfolioSummary") return;
     
@@ -345,6 +374,12 @@ const hot4 = new Handsontable(sheet4El, {
       return { readOnly: false, className: "editable htCenter htMiddle" };
     }
     return { readOnly: true, className: "locked htCenter htMiddle" };
+  },
+  beforeEdit: () => {
+    isUserEditing = true;
+  },
+  afterEdit: () => {
+    setTimeout(() => { isUserEditing = false; }, 500);
   },
   beforeChange: (changes, source) => {
     if (!changes || source === "loadData") return;
