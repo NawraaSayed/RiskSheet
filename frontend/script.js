@@ -61,7 +61,7 @@ function initRealtimeSync() {
       const freshData = await res.json();
       const currentData = hot.getSourceData();
       
-      // Update ONLY current_price and position_value for each row
+      // Update all fields from fresh data (soft updates only if changed)
       if (freshData.rows) {
         for (let i = 0; i < Math.min(currentData.length, freshData.rows.length); i++) {
           const currentRow = currentData[i];
@@ -69,16 +69,20 @@ function initRealtimeSync() {
           
           if (!currentRow || !freshRow || !currentRow.ticker) continue;
           
-          // Update current_price if changed
-          if (currentRow.current_price !== freshRow.current_price) {
-            const colIdx = hot.propToCol('current_price');
-            hot.setDataAtCell(i, colIdx, freshRow.current_price, 'priceUpdate');
-          }
+          // Update ALL calculated fields that might change with price updates
+          // These are the fields that depend on current market prices
+          const fieldsToUpdate = ['current_price', 'position_value', 'pct_change', 'value_paid',
+                                  'entry_atr', 'no_atrs', 'take_profit', 'stop_loss', 'current_tp', 'current_sl',
+                                  'weight', 'beta_weighted', 'var'];
           
-          // Update position_value if changed
-          if (currentRow.position_value !== freshRow.position_value) {
-            const colIdx = hot.propToCol('position_value');
-            hot.setDataAtCell(i, colIdx, freshRow.position_value, 'priceUpdate');
+          for (const field of fieldsToUpdate) {
+            const newVal = freshRow[field];
+            if (currentRow[field] !== newVal && newVal !== undefined) {
+              const colIdx = hot.propToCol(field);
+              if (colIdx >= 0) {
+                hot.setDataAtCell(i, colIdx, newVal, 'priceUpdate');
+              }
+            }
           }
         }
       }
@@ -650,18 +654,24 @@ async function recalc() {
         
         if (!responseRow) continue;
 
-        // Update individual cells in place (not reloading entire table)
-        const fields = ['current_price', 'position_value', 'atr', 'atr_change', 'pct_change', 
-                        'beta', 'weight', 'beta_weighted', 'expected_return', 'weighted_expected_return', 
-                        'var', 'iv', 'holding_period', 'market_cap', 'cap_formatted', 'sector'];
+        // Update ALL fields from response (soft update - only if changed)
+        // Get all possible field names from the response
+        const fieldsToUpdate = Object.keys(responseRow).filter(field => 
+          field !== 'ticker' && field !== 'shares' && field !== 'price_bought' && field !== 'date_bought'
+        );
 
-        for (const field of fields) {
-          const newVal = responseRow[field] || (responseRow.error ? "Err" : "");
-          if (currentRow[field] !== newVal) {
-            const colIdx = hot.propToCol(field);
-            if (colIdx >= 0) {
-              hot.setDataAtCell(i, colIdx, newVal, 'recalcUpdate');
-            }
+        for (const field of fieldsToUpdate) {
+          const newVal = responseRow[field];
+          
+          // Skip if field doesn't exist in current row or if values are the same
+          if (!(field in currentRow) || currentRow[field] === newVal) {
+            continue;
+          }
+          
+          const colIdx = hot.propToCol(field);
+          if (colIdx >= 0) {
+            // Soft update - only update the cell if it changed
+            hot.setDataAtCell(i, colIdx, newVal, 'recalcUpdate');
           }
         }
       }
