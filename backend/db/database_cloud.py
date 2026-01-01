@@ -4,9 +4,17 @@ Data persists within a function invocation, and polling syncs across clients
 """
 import sqlite3
 from pathlib import Path
+import os
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "risksheet.db"
+# Use /tmp on Vercel (writable, ephemeral) or local directory for development
+if os.path.exists("/var/task"):  # Vercel environment
+    DB_PATH = Path("/tmp/risksheet.db")
+else:  # Local development
+    BASE_DIR = Path(__file__).resolve().parent
+    DB_PATH = BASE_DIR / "risksheet.db"
+
+# Ensure parent directory exists
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
