@@ -221,6 +221,11 @@ const hot = new Handsontable(sheetEl, {
   afterRemoveRow: updateRowNumbers,
   afterChange: (changes, source) => {
     if (!changes || source === "loadData") return;
+    
+    // Save individual position changes to Supabase
+    savePositionChanges(changes);
+    
+    // Trigger recalculation for UI updates
     debounceRecalc();
   },
   beforeChange: (changes, source) => {
@@ -595,6 +600,29 @@ async function recalc() {
     updatePortfolioSummary();
     updateSectorTable();
     
+    // Calculate and save sector allocations to Supabase
+    const rows = merged.filter(r => r && r.ticker && !r.error);
+    const totalPortfolioValue = rows.reduce((sum, r) => sum + (Number(r.position_value) || 0), 0);
+    
+    if (totalPortfolioValue > 0) {
+      // Calculate current sector weights from the portfolio
+      const sectorWeights = {};
+      rows.forEach(r => {
+        if (r.sector && r.sector.trim()) {
+          const s = r.sector.trim();
+          sectorWeights[s] = (sectorWeights[s] || 0) + (Number(r.position_value) || 0) / totalPortfolioValue;
+        }
+      });
+      
+      // Update cachedAllocations with calculated weights and persist to Supabase
+      for (const [sector, weight] of Object.entries(sectorWeights)) {
+        cachedAllocations[sector] = Math.round(weight * 100) / 100; // Round to 2 decimals
+      }
+      
+      // Persist all sector allocations to Supabase
+      await saveSectorAllocations();
+    }
+    
     // Re-validate and apply backend errors
     hot.validateCells(() => {
       const tickerCol = hot.propToCol('ticker');
@@ -656,8 +684,22 @@ document.getElementById("sheet").addEventListener("click", (e) => {
   if (e.target && e.target.classList.contains("remove-row-btn")) {
     const row = parseInt(e.target.getAttribute("data-row"), 10);
     if (!isNaN(row)) {
-      hot.alter("remove_row", row);
-      updateRowNumbers();
+      // Get ticker before deleting the row
+      const rowData = hot.getSourceDataAtRow(row);
+      if (rowData && rowData.ticker) {
+        // Delete from Supabase first, then remove from UI
+        deletePosition(rowData.ticker).then(() => {
+          hot.alter("remove_row", row);
+          updateRowNumbers();
+        }).catch((err) => {
+          console.error("Failed to delete position:", err);
+          alert(`Failed to delete ${rowData.ticker}: ${err.message}`);
+        });
+      } else {
+        // No ticker, just remove the row
+        hot.alter("remove_row", row);
+        updateRowNumbers();
+      }
     }
   }
 });
@@ -966,6 +1008,34 @@ async function loadFromBackend() {
   } catch (e) {
     console.error("Failed to load positions:", e);
     return [];
+  }
+}
+
+async function savePositionChanges(changes) {
+  /**
+   * Save individual position changes to Supabase.
+   * Called whenever a position cell is edited.
+   * changes: array of [row, prop, oldValue, newValue]
+   */
+  if (!changes || changes.length === 0) return;
+  
+  try {
+    const rows = hot.getSourceData();
+    
+    for (const [rowIdx, prop, oldVal, newVal] of changes) {
+      // Only save if one of the persistent fields changed
+      if (!['ticker', 'shares', 'price_bought', 'date_bought'].includes(prop)) {
+        continue;
+      }
+      
+      const row = rows[rowIdx];
+      if (!row || !row.ticker) continue; // Skip empty rows
+      
+      // Save the entire row to Supabase via the backend
+      await savePosition(row);
+    }
+  } catch (e) {
+    console.error("Error saving position changes:", e);
   }
 }
 
