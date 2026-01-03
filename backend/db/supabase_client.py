@@ -6,24 +6,35 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-# Validate environment variables at module load time
-SUPABASE_HOST = os.getenv("SUPABASE_HOST", "").strip()
+# Parse Supabase credentials from environment
+# Supports standard Supabase environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_PASSWORD = os.getenv("SUPABASE_PASSWORD", "").strip() or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+
+# Extract host from URL if provided (https://xyz.supabase.co -> xyz.supabase.co)
+SUPABASE_HOST = ""
+if SUPABASE_URL:
+    # Parse URL: https://project-ref.supabase.co
+    if "://" in SUPABASE_URL:
+        SUPABASE_HOST = SUPABASE_URL.split("://")[1]  # Remove https://
+    else:
+        SUPABASE_HOST = SUPABASE_URL
+
 SUPABASE_USER = os.getenv("SUPABASE_USER", "postgres").strip()
-SUPABASE_PASSWORD = os.getenv("SUPABASE_PASSWORD", "").strip()
 SUPABASE_DB = os.getenv("SUPABASE_DB", "postgres").strip()
 
 # Check for missing credentials
 MISSING_VARS = []
 if not SUPABASE_HOST:
-    MISSING_VARS.append("SUPABASE_HOST")
+    MISSING_VARS.append("SUPABASE_URL")
 if not SUPABASE_PASSWORD:
-    MISSING_VARS.append("SUPABASE_PASSWORD")
+    MISSING_VARS.append("SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_PASSWORD)")
 
 if MISSING_VARS:
     print(f"⚠️ Supabase not configured: {', '.join(MISSING_VARS)}")
     print("ℹ️ To enable Supabase, add these to Vercel environment variables:")
-    print("   SUPABASE_HOST=<your-project>.supabase.co")
-    print("   SUPABASE_PASSWORD=<your-password>")
+    print("   SUPABASE_URL=https://your-project.supabase.co")
+    print("   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key")
     SUPABASE_ENABLED = False
 else:
     print(f"✅ Supabase client configured for {SUPABASE_HOST}")
