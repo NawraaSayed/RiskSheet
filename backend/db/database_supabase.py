@@ -26,6 +26,7 @@ else:
 REST_URL = f"{SUPABASE_URL}/rest/v1" if SUPABASE_URL else ""
 HEADERS = {
     "Content-Type": "application/json",
+    "apikey": SUPABASE_SERVICE_ROLE_KEY,
     "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
     "Prefer": "return=representation"
 }
