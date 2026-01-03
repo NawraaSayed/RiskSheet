@@ -24,8 +24,7 @@ from backend.db.database_supabase import (
     get_cash,
     update_cash,
     get_sector_allocations,
-    upsert_sector_allocation,
-    delete_sector_allocation
+    upsert_sector_allocation
 )
 
 # Initialize Supabase on startup
@@ -353,11 +352,9 @@ def read_sector_allocations():
 @app.put("/sector-allocations", dependencies=[Depends(require_user)])
 async def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
     try:
-        # Update in Supabase (single source of truth)
-        if alloc.allocation == 0:
-            delete_sector_allocation(alloc.sector)
-        else:
-            upsert_sector_allocation(alloc.sector, alloc.allocation)
+        # SAFE: Always use upsert, never delete to preserve data
+        # Set to 0 to disable allocation, but keep record in database
+        upsert_sector_allocation(alloc.sector, alloc.allocation)
         
         # Broadcast the sector allocation update to all connected clients
         await manager.broadcast({

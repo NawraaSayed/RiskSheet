@@ -1,4 +1,4 @@
-from backend.db.database import insert_position, get_all_positions, init_db
+from backend.db.database_supabase import insert_position, get_all_positions, init_db
 
 try:
     print("Initializing DB...")

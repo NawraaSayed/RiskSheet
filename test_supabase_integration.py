@@ -18,8 +18,7 @@ from backend.db.database_supabase import (
     get_cash,
     update_cash,
     get_sector_allocations,
-    upsert_sector_allocation,
-    delete_sector_allocation
+    upsert_sector_allocation
 )
 
 
@@ -132,12 +131,12 @@ def test_sector_allocations():
         assert allocations[test_sector] == 0.35, "Update failed"
         print(f"  ✅ Sector allocation updated in Supabase")
         
-        # DELETE
-        print(f"  Deleting {test_sector}...")
-        delete_sector_allocation(test_sector)
+        # SET TO ZERO (instead of DELETE)
+        print(f"  Setting {test_sector} allocation to 0 (disabled)...")
+        upsert_sector_allocation(test_sector, 0.0)
         allocations = get_sector_allocations()
-        assert test_sector not in allocations, "Delete failed"
-        print(f"  ✅ Sector allocation deleted from Supabase")
+        assert allocations[test_sector] == 0.0, "Update to zero failed"
+        print(f"  ✅ Sector allocation set to 0 (preserved in database, marked as disabled)")
         
         return True
     except AssertionError as e:

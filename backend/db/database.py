@@ -1,40 +1,39 @@
-import sqlite3
-import os
-from pathlib import Path
+"""
+❌ DEPRECATED AND DISABLED: SQLite database module
 
-BASE_DIR = Path(__file__).resolve().parent
+THIS MODULE HAS BEEN DISABLED TO PREVENT DATA LOSS.
 
-# Determine database path
-# On Vercel, check if we have a persistent location (project root writable area)
-if os.environ.get("VERCEL"):
-    # Try multiple Vercel persistent paths
-    possible_paths = [
-        Path("/tmp") / "risksheet.db",  # /tmp on Vercel
-        Path.home() / ".cache" / "risksheet.db",  # User home
-        BASE_DIR / "risksheet.db",  # Original location
-    ]
-    
-    DB_PATH = None
-    for path in possible_paths:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            # Test write access
-            test_file = path.parent / ".write_test"
-            test_file.touch()
-            test_file.unlink()
-            DB_PATH = path
-            print(f"Using database at: {DB_PATH}")
-            break
-        except Exception as e:
-            print(f"Cannot write to {path}: {e}")
-            continue
-    
-    if DB_PATH is None:
-        # Fallback to /tmp
-        DB_PATH = Path("/tmp") / "risksheet.db"
-        print(f"Using fallback database at: {DB_PATH}")
-else:
-    DB_PATH = BASE_DIR / "risksheet.db"
+The application now requires Supabase PostgreSQL exclusively.
+All SQLite code below is kept for reference only but MUST NOT be used.
+
+REASON: SQLite in serverless/Vercel environments causes:
+1. Data loss on cold starts
+2. Race conditions with concurrent requests
+3. Accidental data wipes from DELETE statements
+
+USE database_supabase.py INSTEAD with required environment variables:
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
+
+If you need local SQLite for testing, use database_cloud.py instead.
+"""
+
+raise RuntimeError("""
+❌ FATAL: SQLite (database.py) is disabled.
+
+The application now requires Supabase PostgreSQL.
+Please configure:
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
+
+This is not a configuration issue - it's a safety fix to prevent data loss.
+""")
+
+
+"""
+LEGACY CODE BELOW - DO NOT USE
+================================
+
 
 
 def get_connection():

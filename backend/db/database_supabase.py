@@ -1,24 +1,17 @@
 """
 Supabase PostgreSQL database implementation
-Falls back to SQLite if Supabase is not configured
+CRITICAL: NO SQLite fallback. Supabase is mandatory.
 """
 from backend.db.supabase_client import SupabaseClient, SUPABASE_ENABLED
 import psycopg2
 
-# If Supabase not enabled, fall back to SQLite
+# ❌ REMOVED: SQLite fallback
+# If Supabase is not enabled, the application MUST FAIL FAST
+# Do not silently downgrade to SQLite as this causes data loss
 if not SUPABASE_ENABLED:
-    print("⚠️ Supabase not configured - falling back to SQLite")
-    from backend.db.database import (
-        init_db,
-        get_all_positions,
-        insert_position,
-        delete_position,
-        get_cash,
-        update_cash,
-        get_sector_allocations,
-        upsert_sector_allocation,
-        delete_sector_allocation
-    )
+    print("❌ FATAL: Supabase is not configured. The application cannot run.")
+    print("   Please ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.")
+    raise RuntimeError("Supabase is required - SQLite fallback has been removed to prevent data loss")
 else:
     def init_db():
         """
@@ -205,26 +198,21 @@ else:
 
     def delete_sector_allocation(sector: str):
         """
-        Delete a sector allocation from Supabase.
+        ❌ DISABLED: This function is no longer used.
+        Sector allocations are now managed via upsert() with values that can be set to 0.
+        
+        Reason: Deleting tables causes data loss. All data mutations must use UPSERT or UPDATE.
+        
         Args:
             sector: Sector name to delete
         
-        SAFETY: ALWAYS requires sector parameter. Never deletes without WHERE clause.
+        SAFETY: Returns silently without deleting. Use upsert_sector_allocation() instead.
         """
         sector = (sector or "").strip()
         if not sector:
-            raise ValueError("❌ CRITICAL: Sector cannot be empty - refusing DELETE")
+            print("⚠️ WARNING: delete_sector_allocation() called but disabled. Use upsert_sector_allocation() instead.")
+            return
         
-        try:
-            print(f"🗑️ [DELETE] Supabase sector allocation: {sector}")
-            affected = SupabaseClient.execute_update(
-                "DELETE FROM sector_allocations WHERE sector = %s",
-                (sector,)
-            )
-            if affected > 0:
-                print(f"✅ Sector allocation deleted: {sector}")
-            else:
-                print(f"⚠️ Sector allocation not found: {sector}")
-        except psycopg2.Error as e:
-            print(f"❌ Error deleting sector {sector}: {e}")
-            raise Exception(f"Failed to delete sector allocation: {e}")
+        print(f"⚠️ WARNING: delete_sector_allocation() is disabled. Sector '{sector}' will NOT be deleted.")
+        print(f"   Use upsert_sector_allocation('{sector}', 0) to set allocation to 0 instead.")
+        # DO NOT DELETE - just return silently

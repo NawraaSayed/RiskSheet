@@ -1,20 +1,28 @@
 """
-SQLite database for Vercel with polling sync
-Data persists within a function invocation, and polling syncs across clients
+❌ DEPRECATED: SQLite database for Vercel with polling sync
+
+THIS MODULE HAS BEEN DISABLED IN PRODUCTION.
+
+Use database_supabase.py INSTEAD for all deployments.
+
+This file is kept only for local testing reference.
+To use locally for testing: manually import from this module in your test scripts.
+
+NEVER import this in main application code.
 """
-import sqlite3
-from pathlib import Path
-import os
 
-# Use /tmp on Vercel (writable, ephemeral) or local directory for development
-if os.path.exists("/var/task"):  # Vercel environment
-    DB_PATH = Path("/tmp/risksheet.db")
-else:  # Local development
-    BASE_DIR = Path(__file__).resolve().parent
-    DB_PATH = BASE_DIR / "risksheet.db"
+raise RuntimeError("""
+❌ FATAL: SQLite (database_cloud.py) is disabled in the application.
 
-# Ensure parent directory exists
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+The application now requires Supabase PostgreSQL exclusively.
+This module exists only for local testing reference.
+
+To use locally: manually import it in a test file, do not use in production.
+""")
+
+
+# ============ LEGACY CODE BELOW - FOR REFERENCE ONLY ============
+
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)

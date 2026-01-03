@@ -1,4 +1,4 @@
-from backend.db.database import insert_position, init_db, get_all_positions
+from backend.db.database_supabase import insert_position, init_db, get_all_positions
 import time
 
 try:
