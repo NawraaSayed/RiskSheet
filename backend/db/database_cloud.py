@@ -11,14 +11,36 @@ To use locally for testing: manually import from this module in your test script
 NEVER import this in main application code.
 """
 
-raise RuntimeError("""
-❌ FATAL: SQLite (database_cloud.py) is disabled in the application.
+# DO NOT IMPORT OR USE THIS MODULE
+# It is disabled to prevent data loss
 
-The application now requires Supabase PostgreSQL exclusively.
-This module exists only for local testing reference.
+# Stub functions that raise errors if called
+def init_db():
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
 
-To use locally: manually import it in a test file, do not use in production.
-""")
+def get_all_positions():
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
+
+def insert_position(*args, **kwargs):
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
+
+def delete_position(*args, **kwargs):
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
+
+def get_cash():
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
+
+def update_cash(*args, **kwargs):
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
+
+def get_sector_allocations():
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
+
+def upsert_sector_allocation(*args, **kwargs):
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
+
+def delete_sector_allocation(*args, **kwargs):
+    raise RuntimeError("SQLite (database_cloud.py) is disabled - use database_supabase.py instead")
 
 
 # ============ LEGACY CODE BELOW - FOR REFERENCE ONLY ============

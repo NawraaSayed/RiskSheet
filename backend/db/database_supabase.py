@@ -6,12 +6,38 @@ from backend.db.supabase_client import SupabaseClient, SUPABASE_ENABLED
 import psycopg2
 
 # ❌ REMOVED: SQLite fallback
-# If Supabase is not enabled, the application MUST FAIL FAST
-# Do not silently downgrade to SQLite as this causes data loss
+# If Supabase is not enabled, create stub functions that fail at runtime
 if not SUPABASE_ENABLED:
-    print("❌ FATAL: Supabase is not configured. The application cannot run.")
-    print("   Please ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.")
-    raise RuntimeError("Supabase is required - SQLite fallback has been removed to prevent data loss")
+    print("⚠️ WARNING: Supabase is not configured. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.")
+    
+    def init_db():
+        raise RuntimeError("""
+❌ FATAL: Supabase is not configured. The application cannot run.
+   Please ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.""")
+    
+    def get_all_positions():
+        raise RuntimeError("Supabase is not configured - cannot fetch positions")
+    
+    def insert_position(*args, **kwargs):
+        raise RuntimeError("Supabase is not configured - cannot insert position")
+    
+    def delete_position(*args, **kwargs):
+        raise RuntimeError("Supabase is not configured - cannot delete position")
+    
+    def get_cash():
+        raise RuntimeError("Supabase is not configured - cannot fetch cash")
+    
+    def update_cash(*args, **kwargs):
+        raise RuntimeError("Supabase is not configured - cannot update cash")
+    
+    def get_sector_allocations():
+        raise RuntimeError("Supabase is not configured - cannot fetch sector allocations")
+    
+    def upsert_sector_allocation(*args, **kwargs):
+        raise RuntimeError("Supabase is not configured - cannot upsert sector allocation")
+    
+    def delete_sector_allocation(*args, **kwargs):
+        raise RuntimeError("Supabase is not configured - cannot delete sector allocation")
 else:
     def init_db():
         """

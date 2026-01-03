@@ -27,13 +27,19 @@ from backend.db.database_supabase import (
     upsert_sector_allocation
 )
 
-# Initialize Supabase on startup
+# Initialize Supabase on startup (with graceful fallback for missing config)
 try:
     init_db()
     print("✅ Supabase database ready")
+except RuntimeError as e:
+    # Supabase not configured - log but don't crash
+    # Requests will fail when they try to access the database
+    print(f"⚠️ WARNING: {e}")
+    print("   Setting up Supabase now could prevent this message.")
 except Exception as e:
-    print(f"❌ FATAL: Cannot initialize Supabase: {e}")
-    raise
+    # Other errors (connection issues, missing tables) should be reported
+    print(f"❌ WARNING: Database initialization failed: {e}")
+    print("   Some features may not work. Check your Supabase configuration.")
 
 
 import numpy as np
@@ -201,10 +207,12 @@ def check_auth(user: Optional[str] = Depends(get_current_user)):
 def startup():
     try:
         init_db()
+    except RuntimeError as e:
+        # Supabase not configured - log but don't crash
+        print(f"⚠️ WARNING: {e}")
     except Exception as e:
-        print(f"Startup failed: {e}")
-        # On Vercel, we might want to continue even if DB init fails, 
-        # though functionality will be broken.
+        # Other errors are just warnings
+        print(f"⚠️ WARNING: Startup database check failed: {e}")
         pass
 
 
