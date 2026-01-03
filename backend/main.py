@@ -216,6 +216,30 @@ def startup():
         pass
 
 
+# ============= DIAGNOSTIC ENDPOINT =============
+@app.get("/health")
+def health_check():
+    """
+    Diagnostic endpoint to check if Supabase is configured.
+    Returns configuration status without requiring authentication.
+    """
+    from backend.db import database_supabase
+    
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_PASSWORD", "").strip()
+    
+    return {
+        "status": "ok",
+        "environment": "production" if os.getenv("VERCEL") else "local",
+        "supabase_configured": database_supabase.SUPABASE_ENABLED,
+        "supabase_url": supabase_url[:50] + "..." if supabase_url else "NOT SET",
+        "service_role_key_set": bool(service_role_key),
+        "service_role_key_preview": (service_role_key[:10] + "..." + service_role_key[-5:]) if service_role_key else "NOT SET",
+        "rest_url": database_supabase.REST_URL or "NOT CONFIGURED",
+        "message": "All systems operational" if database_supabase.SUPABASE_ENABLED else "⚠️ Supabase not configured - REST API will fail"
+    }
+
+
 @app.get("/positions", response_model=List[PositionDB], dependencies=[Depends(require_user)])
 def read_positions():
     try:
