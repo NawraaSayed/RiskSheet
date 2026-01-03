@@ -218,7 +218,15 @@ def startup():
 
 @app.get("/positions", response_model=List[PositionDB], dependencies=[Depends(require_user)])
 def read_positions():
-    return get_all_positions()
+    try:
+        return get_all_positions()
+    except RuntimeError as e:
+        # Supabase not configured
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {str(e)}")
+    except Exception as e:
+        # Other database errors
+        print(f"❌ Error fetching positions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch positions: {str(e)}")
 
 
 @app.post("/positions", response_model=PositionDB, dependencies=[Depends(require_user)])
@@ -233,7 +241,11 @@ async def create_position(pos: PositionIn):
         date_bought = pos.date_bought if pos.date_bought else None
         
         # Insert into Supabase (single source of truth)
-        insert_position(ticker, shares, price_bought, date_bought)
+        try:
+            insert_position(ticker, shares, price_bought, date_bought)
+        except RuntimeError as db_err:
+            # Supabase not configured
+            raise HTTPException(status_code=503, detail=str(db_err))
         
         # Return the object that was just saved
         return PositionDB(
@@ -257,7 +269,10 @@ async def delete_position_endpoint(ticker: str):
             raise HTTPException(status_code=400, detail="Ticker is required")
         
         # Delete from Supabase (single source of truth)
-        delete_position(ticker)
+        try:
+            delete_position(ticker)
+        except RuntimeError as db_err:
+            raise HTTPException(status_code=503, detail=str(db_err))
         
         return {"ok": True, "message": f"Position {ticker} deleted"}
     except HTTPException:
@@ -326,14 +341,23 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/cash", response_model=CashUpdate, dependencies=[Depends(require_user)])
 def read_cash():
-    return {"amount": get_cash()}
+    try:
+        return {"amount": get_cash()}
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        print(f"❌ Error fetching cash: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch cash: {str(e)}")
 
 
 @app.put("/cash", response_model=CashUpdate, dependencies=[Depends(require_user)])
 async def update_cash_endpoint(cash: CashUpdate):
     try:
         # Update in Supabase (single source of truth)
-        update_cash(cash.amount)
+        try:
+            update_cash(cash.amount)
+        except RuntimeError as db_err:
+            raise HTTPException(status_code=503, detail=str(db_err))
         
         # Broadcast the cash update to all connected clients
         await manager.broadcast({
@@ -342,6 +366,8 @@ async def update_cash_endpoint(cash: CashUpdate):
         })
         
         return cash
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error updating cash: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update cash: {str(e)}")
@@ -352,6 +378,8 @@ def read_sector_allocations():
     try:
         # Fetch from Supabase (single source of truth)
         return get_sector_allocations()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         print(f"❌ Error fetching sector allocations: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch sector allocations: {str(e)}")
@@ -362,7 +390,10 @@ async def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
     try:
         # SAFE: Always use upsert, never delete to preserve data
         # Set to 0 to disable allocation, but keep record in database
-        upsert_sector_allocation(alloc.sector, alloc.allocation)
+        try:
+            upsert_sector_allocation(alloc.sector, alloc.allocation)
+        except RuntimeError as db_err:
+            raise HTTPException(status_code=503, detail=str(db_err))
         
         # Broadcast the sector allocation update to all connected clients
         await manager.broadcast({
@@ -372,11 +403,11 @@ async def update_sector_allocation_endpoint(alloc: SectorAllocationUpdate):
         })
         
         return {"ok": True, "message": f"Sector {alloc.sector} allocation updated"}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error updating sector allocation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update sector allocation: {str(e)}")
-    
-    return {"ok": True}
 
 
 app.add_middleware(
