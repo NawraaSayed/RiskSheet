@@ -104,12 +104,15 @@ else:
         Delete a position from Supabase.
         Args:
             ticker: Stock symbol to delete
+        
+        SAFETY: ALWAYS requires ticker parameter. Never deletes without WHERE clause.
         """
         ticker = (ticker or "").strip().upper()
         if not ticker:
-            raise ValueError("Ticker cannot be empty")
+            raise ValueError("❌ CRITICAL: Ticker cannot be empty - refusing DELETE")
         
         try:
+            print(f"🗑️ [DELETE] Supabase position: {ticker}")
             affected = SupabaseClient.execute_update(
                 "DELETE FROM positions WHERE ticker = %s",
                 (ticker,)
@@ -140,12 +143,16 @@ else:
 
     def update_cash(amount: float):
         """
-        Update cash value in Supabase.
+        Update cash value in Supabase. SAFE: Uses INSERT...ON CONFLICT.
         Args:
             amount: New cash balance
+        
+        SAFETY: Never uses DELETE. Always preserves existing record.
         """
         try:
-            # First, ensure a cash record exists
+            print(f"💰 [UPDATE] Supabase cash: ${amount}")
+            # SAFE: Use INSERT...ON CONFLICT instead of DELETE
+            # This ensures we never truncate the cash table
             SupabaseClient.execute_update(
                 "INSERT INTO cash (id, amount) VALUES (1, %s) ON CONFLICT (id) DO UPDATE SET amount = %s",
                 (amount, amount)
@@ -201,12 +208,15 @@ else:
         Delete a sector allocation from Supabase.
         Args:
             sector: Sector name to delete
+        
+        SAFETY: ALWAYS requires sector parameter. Never deletes without WHERE clause.
         """
         sector = (sector or "").strip()
         if not sector:
-            raise ValueError("Sector cannot be empty")
+            raise ValueError("❌ CRITICAL: Sector cannot be empty - refusing DELETE")
         
         try:
+            print(f"🗑️ [DELETE] Supabase sector allocation: {sector}")
             affected = SupabaseClient.execute_update(
                 "DELETE FROM sector_allocations WHERE sector = %s",
                 (sector,)

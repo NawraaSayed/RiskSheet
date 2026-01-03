@@ -162,23 +162,25 @@ def insert_position(ticker: str, shares: float, price_bought: float, date_bought
 
 
 def delete_position(ticker: str):
-    """Delete a position by ticker."""
+    """Delete a position by ticker. ALWAYS requires ticker parameter."""
+    if not ticker or not isinstance(ticker, str):
+        raise ValueError("❌ CRITICAL: delete_position requires a valid ticker string")
+    ticker = ticker.strip().upper()
+    if not ticker:
+        raise ValueError("❌ CRITICAL: delete_position cannot delete with empty ticker")
+    
     conn = get_connection()
     try:
+        print(f"🗑️ [DELETE] Removing position: {ticker}")
         conn.execute("DELETE FROM positions WHERE ticker = ?", (ticker,))
         conn.commit()
+        print(f"✅ Position deleted: {ticker}")
     finally:
         conn.close()
 
 
-def clear_positions():
-    """Delete all positions."""
-    conn = get_connection()
-    try:
-        conn.execute("DELETE FROM positions")
-        conn.commit()
-    finally:
-        conn.close()
+# ❌ REMOVED: clear_positions() - dangerous, causes data loss
+# Use delete_position(ticker) instead for safe, targeted deletions
 
 
 # --- CASH HELPERS ---
@@ -195,13 +197,18 @@ def get_cash():
 
 
 def update_cash(amount: float):
-    """Update the cash amount."""
+    """Update the cash amount. SAFE: Uses INSERT...ON CONFLICT, never truncates."""
     conn = get_connection()
     try:
-        # Ensure single row by deleting all and inserting new
-        conn.execute("DELETE FROM cash")
-        conn.execute("INSERT INTO cash (id, amount) VALUES (1, ?)", (amount,))
+        print(f"💰 [UPDATE] Cash amount: ${amount}")
+        # SAFE: Use INSERT...ON CONFLICT instead of DELETE
+        # This preserves the row and only updates the amount
+        conn.execute(
+            "INSERT INTO cash (id, amount) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET amount = ?",
+            (amount, amount)
+        )
         conn.commit()
+        print(f"✅ Cash updated: ${amount}")
     finally:
         conn.close()
 
@@ -234,20 +241,22 @@ def upsert_sector_allocation(sector: str, allocation: float):
 
 
 def delete_sector_allocation(sector: str):
-    """Delete a sector allocation."""
+    """Delete a sector allocation. ALWAYS requires sector parameter."""
+    if not sector or not isinstance(sector, str):
+        raise ValueError("❌ CRITICAL: delete_sector_allocation requires a valid sector string")
+    sector = sector.strip()
+    if not sector:
+        raise ValueError("❌ CRITICAL: delete_sector_allocation cannot delete with empty sector")
+    
     conn = get_connection()
     try:
+        print(f"🗑️ [DELETE] Removing sector allocation: {sector}")
         conn.execute("DELETE FROM sector_allocations WHERE sector = ?", (sector,))
         conn.commit()
+        print(f"✅ Sector allocation deleted: {sector}")
     finally:
         conn.close()
 
 
-def clear_sector_allocations():
-    """Clear all sector allocations."""
-    conn = get_connection()
-    try:
-        conn.execute("DELETE FROM sector_allocations")
-        conn.commit()
-    finally:
-        conn.close()
+# ❌ REMOVED: clear_sector_allocations() - dangerous, causes data loss
+# Use delete_sector_allocation(sector) instead for safe, targeted deletions
