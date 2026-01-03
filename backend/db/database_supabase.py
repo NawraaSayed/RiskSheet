@@ -6,39 +6,39 @@ from backend.db.supabase_client import SupabaseClient, SUPABASE_ENABLED
 import psycopg2
 
 # ❌ REMOVED: SQLite fallback
-# If Supabase is not enabled, create stub functions that fail at runtime
-if not SUPABASE_ENABLED:
-    print("⚠️ WARNING: Supabase is not configured. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.")
-    
-    def init_db():
-        raise RuntimeError("""
+# Define stub functions that will be overridden if Supabase is enabled
+def init_db():
+    raise RuntimeError("""
 ❌ FATAL: Supabase is not configured. The application cannot run.
    Please ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.""")
-    
-    def get_all_positions():
-        raise RuntimeError("Supabase is not configured - cannot fetch positions")
-    
-    def insert_position(*args, **kwargs):
-        raise RuntimeError("Supabase is not configured - cannot insert position")
-    
-    def delete_position(*args, **kwargs):
-        raise RuntimeError("Supabase is not configured - cannot delete position")
-    
-    def get_cash():
-        raise RuntimeError("Supabase is not configured - cannot fetch cash")
-    
-    def update_cash(*args, **kwargs):
-        raise RuntimeError("Supabase is not configured - cannot update cash")
-    
-    def get_sector_allocations():
-        raise RuntimeError("Supabase is not configured - cannot fetch sector allocations")
-    
-    def upsert_sector_allocation(*args, **kwargs):
-        raise RuntimeError("Supabase is not configured - cannot upsert sector allocation")
-    
-    def delete_sector_allocation(*args, **kwargs):
-        raise RuntimeError("Supabase is not configured - cannot delete sector allocation")
-else:
+
+def get_all_positions():
+    raise RuntimeError("Supabase is not configured - cannot fetch positions")
+
+def insert_position(*args, **kwargs):
+    raise RuntimeError("Supabase is not configured - cannot insert position")
+
+def delete_position(*args, **kwargs):
+    raise RuntimeError("Supabase is not configured - cannot delete position")
+
+def get_cash():
+    raise RuntimeError("Supabase is not configured - cannot fetch cash")
+
+def update_cash(*args, **kwargs):
+    raise RuntimeError("Supabase is not configured - cannot update cash")
+
+def get_sector_allocations():
+    raise RuntimeError("Supabase is not configured - cannot fetch sector allocations")
+
+def upsert_sector_allocation(*args, **kwargs):
+    raise RuntimeError("Supabase is not configured - cannot upsert sector allocation")
+
+def delete_sector_allocation(*args, **kwargs):
+    raise RuntimeError("Supabase is not configured - cannot delete sector allocation")
+
+
+# If Supabase IS configured, define real functions
+if SUPABASE_ENABLED:
     def init_db():
         """
         Initialize database tables if they don't exist.
