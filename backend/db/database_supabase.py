@@ -1,9 +1,34 @@
 """
-Supabase PostgreSQL database implementation
-CRITICAL: NO SQLite fallback. Supabase is mandatory.
+Supabase REST API database implementation
+Uses REST API instead of direct PostgreSQL (fixes Vercel timeout issues)
 """
-from backend.db.supabase_client import SupabaseClient, SUPABASE_ENABLED
-import psycopg2
+import os
+import requests
+import json
+from typing import List, Dict, Any
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_PASSWORD", "").strip()
+
+MISSING_VARS = []
+if not SUPABASE_URL:
+    MISSING_VARS.append("SUPABASE_URL")
+if not SUPABASE_SERVICE_ROLE_KEY:
+    MISSING_VARS.append("SUPABASE_SERVICE_ROLE_KEY")
+
+if MISSING_VARS:
+    print(f"⚠️ Supabase not configured: {', '.join(MISSING_VARS)}")
+    SUPABASE_ENABLED = False
+else:
+    print(f"✅ Supabase REST API configured")
+    SUPABASE_ENABLED = True
+
+REST_URL = f"{SUPABASE_URL}/rest/v1" if SUPABASE_URL else ""
+HEADERS = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    "Prefer": "return=representation"
+}
 
 # ❌ REMOVED: SQLite fallback
 # Define stub functions that will be overridden if Supabase is enabled
@@ -37,59 +62,62 @@ def delete_sector_allocation(*args, **kwargs):
     raise RuntimeError("Supabase is not configured - cannot delete sector allocation")
 
 
-# If Supabase IS configured, define real functions
+# If Supabase IS configured, define real functions using REST API
 if SUPABASE_ENABLED:
     def init_db():
         """
         Initialize database tables if they don't exist.
         Called once at startup - tables should already exist in Supabase.
+        Uses REST API to verify tables exist.
         """
         try:
-            conn = SupabaseClient.get_connection()
-            cur = conn.cursor()
+            # Test connection by fetching from positions table (will fail gracefully if not exists)
+            response = requests.get(
+                f"{REST_URL}/positions?select=count()",
+                headers=HEADERS,
+                timeout=5
+            )
             
-            # Verify tables exist by querying information_schema
-            cur.execute("""
-                SELECT table_name FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_name IN ('positions', 'cash', 'sector_allocations')
-            """)
-            existing_tables = [row[0] for row in cur.fetchall()]
-            cur.close()
-            conn.close()
-            
-            required_tables = {'positions', 'cash', 'sector_allocations'}
-            missing_tables = required_tables - set(existing_tables)
-            
-            if missing_tables:
-                print(f"⚠️ Missing tables in Supabase: {missing_tables}")
-                print("Please create these tables manually in Supabase SQL Editor")
-                raise Exception(f"Missing tables: {missing_tables}")
-            
-            print(f"✅ Supabase database ready. Tables verified: {existing_tables}")
+            if response.status_code == 200:
+                print(f"✅ Supabase database ready (REST API connection verified)")
+            else:
+                print(f"⚠️ Supabase REST API returned {response.status_code}: {response.text}")
+                raise Exception(f"Failed to verify Supabase tables: {response.text}")
             
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
             raise
 
 
-    def get_all_positions():
+    def get_all_positions() -> List[Dict[str, Any]]:
         """
-        Fetch all positions from Supabase.
+        Fetch all positions from Supabase using REST API.
         Returns: List of dicts with keys: ticker, shares, price_bought, date_bought
         """
         try:
-            rows = SupabaseClient.execute_query(
-                "SELECT ticker, shares, price_bought, date_bought FROM positions ORDER BY ticker ASC"
+            response = requests.get(
+                f"{REST_URL}/positions",
+                headers=HEADERS,
+                params={"order": "ticker.asc"},
+                timeout=5
             )
-            return rows
-        except psycopg2.Error as e:
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"❌ Error fetching positions: {response.status_code}")
+                raise Exception(f"Failed to fetch positions: {response.text}")
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout fetching positions from REST API")
+            raise Exception("Timeout fetching positions")
+        except Exception as e:
             print(f"❌ Error fetching positions: {e}")
             raise Exception(f"Failed to fetch positions: {e}")
 
 
     def insert_position(ticker: str, shares: float, price_bought: float, date_bought: str = None):
         """
-        Insert or update a position in Supabase.
+        Insert or update a position in Supabase using REST API (upsert).
         Args:
             ticker: Stock symbol (will be uppercased)
             shares: Number of shares
@@ -101,26 +129,55 @@ if SUPABASE_ENABLED:
             raise ValueError("Ticker cannot be empty")
         
         try:
-            SupabaseClient.execute_update(
-                """
-                INSERT INTO positions (ticker, shares, price_bought, date_bought)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (ticker) DO UPDATE SET
-                    shares = EXCLUDED.shares,
-                    price_bought = EXCLUDED.price_bought,
-                    date_bought = EXCLUDED.date_bought
-                """,
-                (ticker, shares, price_bought, date_bought)
+            # Try to update first
+            response = requests.patch(
+                f"{REST_URL}/positions",
+                headers=HEADERS,
+                params={"ticker": f"eq.{ticker}"},
+                json={
+                    "shares": shares,
+                    "price_bought": price_bought,
+                    "date_bought": date_bought
+                },
+                timeout=5
             )
-            print(f"✅ Position saved: {ticker} ({shares} shares @ ${price_bought})")
-        except psycopg2.Error as e:
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    print(f"✅ Position updated: {ticker} ({shares} shares @ ${price_bought})")
+                    return
+            
+            # If no rows updated, insert new
+            response = requests.post(
+                f"{REST_URL}/positions",
+                headers=HEADERS,
+                json={
+                    "ticker": ticker,
+                    "shares": shares,
+                    "price_bought": price_bought,
+                    "date_bought": date_bought
+                },
+                timeout=5
+            )
+            
+            if response.status_code in [200, 201]:
+                print(f"✅ Position saved: {ticker} ({shares} shares @ ${price_bought})")
+            else:
+                print(f"❌ Error inserting position {ticker}: {response.status_code}")
+                raise Exception(f"Failed to save position: {response.text}")
+                
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout saving position to REST API")
+            raise Exception("Timeout saving position")
+        except Exception as e:
             print(f"❌ Error inserting position {ticker}: {e}")
             raise Exception(f"Failed to save position: {e}")
 
 
     def delete_position(ticker: str):
         """
-        Delete a position from Supabase.
+        Delete a position from Supabase using REST API.
         Args:
             ticker: Stock symbol to delete
         
@@ -132,37 +189,58 @@ if SUPABASE_ENABLED:
         
         try:
             print(f"🗑️ [DELETE] Supabase position: {ticker}")
-            affected = SupabaseClient.execute_update(
-                "DELETE FROM positions WHERE ticker = %s",
-                (ticker,)
+            response = requests.delete(
+                f"{REST_URL}/positions",
+                headers=HEADERS,
+                params={"ticker": f"eq.{ticker}"},
+                timeout=5
             )
-            if affected > 0:
+            
+            if response.status_code in [200, 204]:
                 print(f"✅ Position deleted: {ticker}")
             else:
-                print(f"⚠️ Position not found: {ticker}")
-        except psycopg2.Error as e:
+                print(f"⚠️ Position not found or error: {response.status_code}")
+                
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout deleting position from REST API")
+            raise Exception("Timeout deleting position")
+        except Exception as e:
             print(f"❌ Error deleting position {ticker}: {e}")
             raise Exception(f"Failed to delete position: {e}")
 
 
     def get_cash() -> float:
         """
-        Get current cash value from Supabase.
+        Get current cash value from Supabase using REST API.
         Returns: Float amount
         """
         try:
-            rows = SupabaseClient.execute_query("SELECT amount FROM cash WHERE id = 1")
-            if rows and len(rows) > 0:
-                return float(rows[0]["amount"])
-            return 0.0
-        except psycopg2.Error as e:
+            response = requests.get(
+                f"{REST_URL}/cash",
+                headers=HEADERS,
+                params={"id": "eq.1"},
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    return float(data[0].get("amount", 0))
+                return 0.0
+            else:
+                print(f"❌ Error fetching cash: {response.status_code}")
+                raise Exception(f"Failed to fetch cash: {response.text}")
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout fetching cash from REST API")
+            raise Exception("Timeout fetching cash")
+        except Exception as e:
             print(f"❌ Error fetching cash: {e}")
             raise Exception(f"Failed to fetch cash: {e}")
 
 
     def update_cash(amount: float):
         """
-        Update cash value in Supabase. SAFE: Uses INSERT...ON CONFLICT.
+        Update cash value in Supabase using REST API. SAFE: Uses upsert pattern.
         Args:
             amount: New cash balance
         
@@ -170,36 +248,73 @@ if SUPABASE_ENABLED:
         """
         try:
             print(f"💰 [UPDATE] Supabase cash: ${amount}")
-            # SAFE: Use INSERT...ON CONFLICT instead of DELETE
-            # This ensures we never truncate the cash table
-            SupabaseClient.execute_update(
-                "INSERT INTO cash (id, amount) VALUES (1, %s) ON CONFLICT (id) DO UPDATE SET amount = %s",
-                (amount, amount)
+            
+            # Try to update first
+            response = requests.patch(
+                f"{REST_URL}/cash",
+                headers=HEADERS,
+                params={"id": "eq.1"},
+                json={"amount": amount},
+                timeout=5
             )
-            print(f"✅ Cash updated: ${amount}")
-        except psycopg2.Error as e:
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    print(f"✅ Cash updated: ${amount}")
+                    return
+            
+            # If no rows updated, insert new
+            response = requests.post(
+                f"{REST_URL}/cash",
+                headers=HEADERS,
+                json={"id": 1, "amount": amount},
+                timeout=5
+            )
+            
+            if response.status_code in [200, 201]:
+                print(f"✅ Cash updated: ${amount}")
+            else:
+                print(f"❌ Error updating cash: {response.status_code}")
+                raise Exception(f"Failed to update cash: {response.text}")
+                
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout updating cash on REST API")
+            raise Exception("Timeout updating cash")
+        except Exception as e:
             print(f"❌ Error updating cash: {e}")
             raise Exception(f"Failed to update cash: {e}")
 
 
     def get_sector_allocations() -> dict:
         """
-        Get all sector allocations from Supabase.
+        Get all sector allocations from Supabase using REST API.
         Returns: Dict with keys=sector names, values=allocation floats
         """
         try:
-            rows = SupabaseClient.execute_query(
-                "SELECT sector, allocation FROM sector_allocations"
+            response = requests.get(
+                f"{REST_URL}/sector_allocations",
+                headers=HEADERS,
+                timeout=5
             )
-            return {row["sector"]: float(row["allocation"]) for row in rows}
-        except psycopg2.Error as e:
+            
+            if response.status_code == 200:
+                rows = response.json()
+                return {row["sector"]: float(row["allocation"]) for row in rows}
+            else:
+                print(f"❌ Error fetching sector allocations: {response.status_code}")
+                raise Exception(f"Failed to fetch sector allocations: {response.text}")
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout fetching sector allocations from REST API")
+            raise Exception("Timeout fetching sector allocations")
+        except Exception as e:
             print(f"❌ Error fetching sector allocations: {e}")
             raise Exception(f"Failed to fetch sector allocations: {e}")
 
 
     def upsert_sector_allocation(sector: str, allocation: float):
         """
-        Insert or update a sector allocation in Supabase.
+        Insert or update a sector allocation in Supabase using REST API.
         Args:
             sector: Sector name
             allocation: Allocation percentage/amount
@@ -209,15 +324,39 @@ if SUPABASE_ENABLED:
             raise ValueError("Sector cannot be empty")
         
         try:
-            SupabaseClient.execute_update(
-                """
-                INSERT INTO sector_allocations (sector, allocation) VALUES (%s, %s)
-                ON CONFLICT (sector) DO UPDATE SET allocation = EXCLUDED.allocation
-                """,
-                (sector, allocation)
+            # Try to update first
+            response = requests.patch(
+                f"{REST_URL}/sector_allocations",
+                headers=HEADERS,
+                params={"sector": f"eq.{sector}"},
+                json={"allocation": allocation},
+                timeout=5
             )
-            print(f"✅ Sector allocation saved: {sector} = {allocation}")
-        except psycopg2.Error as e:
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    print(f"✅ Sector allocation saved: {sector} = {allocation}")
+                    return
+            
+            # If no rows updated, insert new
+            response = requests.post(
+                f"{REST_URL}/sector_allocations",
+                headers=HEADERS,
+                json={"sector": sector, "allocation": allocation},
+                timeout=5
+            )
+            
+            if response.status_code in [200, 201]:
+                print(f"✅ Sector allocation saved: {sector} = {allocation}")
+            else:
+                print(f"❌ Error upserting sector {sector}: {response.status_code}")
+                raise Exception(f"Failed to save sector allocation: {response.text}")
+                
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout upserting sector allocation on REST API")
+            raise Exception("Timeout upserting sector allocation")
+        except Exception as e:
             print(f"❌ Error upserting sector {sector}: {e}")
             raise Exception(f"Failed to save sector allocation: {e}")
 
